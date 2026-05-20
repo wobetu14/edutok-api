@@ -1,0 +1,698 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ────────────────────────────────────────────────────────────────────
+
+enum Role {
+  super_admin
+  org_admin
+  instructor
+  learner
+}
+
+enum TwoFaMethod {
+  phone
+  email
+  none
+}
+
+enum OrgRole {
+  org_admin
+  instructor
+}
+
+enum CourseStatus {
+  pending
+  approved
+  rejected
+}
+
+enum CourseVisibility {
+  public
+  unlisted
+  private
+}
+
+enum Difficulty {
+  Beginner
+  Intermediate
+  Advanced
+}
+
+enum LessonType {
+  text
+  image
+  video
+}
+
+enum QuizType {
+  truefalse
+  multipleChoice
+  imageMatching
+}
+
+enum VerificationType {
+  phone_verify
+  email_verify
+  two_fa
+  password_reset
+}
+
+enum NotificationType {
+  lesson_complete
+  quiz_pass
+  enrollment
+  daily_reminder
+  badge_earned
+}
+
+enum DevicePlatform {
+  ios
+  android
+}
+
+enum SharePlatform {
+  native
+  copy
+}
+
+enum MediaResourceType {
+  avatar
+  course_thumbnail
+  lesson_image
+  org_logo
+}
+
+enum ReportStatus {
+  open
+  reviewed
+  dismissed
+}
+
+enum FontScale {
+  sm
+  md
+  lg
+}
+
+// ─── Auth & Users ─────────────────────────────────────────────────────────────
+
+model User {
+  id                    String      @id @default(cuid())
+  full_name             String
+  username              String      @unique
+  phone                 String      @unique
+  password_hash         String
+  role                  Role        @default(learner)
+  // email: required for non-learners; optional/additional for learners (not used for learner auth)
+  email                 String?     @unique
+  avatar_url            String?
+  bio                   String?     @db.Text
+  expertise             Json        @default("[]")
+  is_phone_verified     Boolean     @default(false)
+  is_email_verified     Boolean     @default(false)
+  two_fa_enabled        Boolean     @default(false)
+  // learners: always 'phone' (enforced server-side); non-learners: 'phone' | 'email'
+  two_fa_method         TwoFaMethod @default(none)
+  lang_pref             String      @default("en")
+  notifications_enabled Boolean     @default(true)
+  created_at            DateTime    @default(now())
+  updated_at            DateTime    @updatedAt
+
+  owned_organizations   Organization[]       @relation("OrgOwner")
+  org_memberships       OrgMember[]
+  instructed_courses    Course[]             @relation("CourseInstructor")
+  enrollments           Enrollment[]
+  lesson_completions    LessonCompletion[]
+  quiz_passes           QuizPass[]
+  video_watch_progress  VideoWatchProgress[]
+  streak                Streak?
+  lesson_likes          LessonLike[]
+  lesson_saves          LessonSave[]
+  comments              Comment[]
+  comment_likes         CommentLike[]
+  share_events          ShareEvent[]
+  badges                Badge[]
+  certificates          Certificate[]
+  following             InstructorFollow[]   @relation("Follower")
+  followers             InstructorFollow[]   @relation("Instructor")
+  preferences           UserPreference?
+  settings              UserSetting?
+  device_tokens         DeviceToken[]
+  notification_logs     NotificationLog[]
+  media_uploads         MediaUpload[]
+  search_history        SearchHistory[]
+  refresh_tokens        RefreshToken[]
+  password_reset_tokens PasswordResetToken[]
+  phone_verifications   PhoneVerification[]
+  email_verifications   EmailVerification[]
+  course_approvals      CourseApproval[]
+  content_reports       ContentReport[]      @relation("Reporter")
+  resolved_reports      ContentReport[]      @relation("Resolver")
+  audit_logs            AuditLog[]
+  announcements         Announcement[]
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id         String    @id @default(cuid())
+  user_id    String
+  token_hash String    @unique
+  expires_at DateTime
+  revoked_at DateTime?
+  created_at DateTime  @default(now())
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@map("refresh_tokens")
+}
+
+model PasswordResetToken {
+  id         String    @id @default(cuid())
+  user_id    String
+  token_hash String    @unique
+  expires_at DateTime
+  used_at    DateTime?
+  created_at DateTime  @default(now())
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@map("password_reset_tokens")
+}
+
+model PhoneVerification {
+  id          String           @id @default(cuid())
+  user_id     String
+  phone       String
+  code        String
+  attempts    Int              @default(0)
+  type        VerificationType
+  expires_at  DateTime
+  verified_at DateTime?
+  created_at  DateTime         @default(now())
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@map("phone_verifications")
+}
+
+model EmailVerification {
+  id          String           @id @default(cuid())
+  user_id     String
+  email       String
+  token_hash  String
+  attempts    Int              @default(0)
+  type        VerificationType
+  expires_at  DateTime
+  verified_at DateTime?
+  created_at  DateTime         @default(now())
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@map("email_verifications")
+}
+
+// ─── Organizations ────────────────────────────────────────────────────────────
+
+model Organization {
+  id            String    @id @default(cuid())
+  name          String
+  logo_url      String?
+  description   String?   @db.Text
+  owner_user_id String
+  website       String?
+  created_at    DateTime  @default(now())
+  updated_at    DateTime  @updatedAt
+
+  owner   User        @relation("OrgOwner", fields: [owner_user_id], references: [id])
+  members OrgMember[]
+  courses Course[]
+
+  @@map("organizations")
+}
+
+model OrgMember {
+  id        String   @id @default(cuid())
+  user_id   String
+  org_id    String
+  role      OrgRole
+  joined_at DateTime @default(now())
+
+  user User         @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  org  Organization @relation(fields: [org_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, org_id])
+  @@map("org_members")
+}
+
+// ─── Courses & Lessons ────────────────────────────────────────────────────────
+
+model Course {
+  id                  String           @id @default(cuid())
+  org_id              String
+  instructor_id       String
+  title               String
+  description         String?          @db.Text
+  thumbnail_url       String?
+  category            String
+  tags                Json             @default("[]")
+  difficulty          Difficulty       @default(Beginner)
+  status              CourseStatus     @default(pending)
+  visibility          CourseVisibility @default(public)
+  enrolled_count      Int              @default(0)
+  total_duration_secs Int              @default(0)
+  published_at        DateTime?
+  created_at          DateTime         @default(now())
+  updated_at          DateTime         @updatedAt
+
+  organization       Organization       @relation(fields: [org_id], references: [id])
+  instructor         User               @relation("CourseInstructor", fields: [instructor_id], references: [id])
+  lessons            Lesson[]
+  enrollments        Enrollment[]
+  lesson_completions LessonCompletion[]
+  certificates       Certificate[]
+  share_events       ShareEvent[]
+  approvals          CourseApproval[]
+
+  @@map("courses")
+}
+
+model Lesson {
+  id             String     @id @default(cuid())
+  course_id      String
+  title          String
+  type           LessonType
+  // text: {body}  |  image: [{uri,caption}]  |  video: {youtubeId}
+  content_json   Json
+  order_index    Int
+  duration_secs  Int        @default(0)
+  thumbnail_url  String?
+  has_quiz       Boolean    @default(false)
+  likes_count    Int        @default(0)
+  saves_count    Int        @default(0)
+  comments_count Int        @default(0)
+  shares_count   Int        @default(0)
+  created_at     DateTime   @default(now())
+  updated_at     DateTime   @updatedAt
+
+  course               Course               @relation(fields: [course_id], references: [id], onDelete: Cascade)
+  quiz                 Quiz?
+  completions          LessonCompletion[]
+  quiz_pass_refs       QuizPass[]
+  video_watch_progress VideoWatchProgress[]
+  likes                LessonLike[]
+  saves                LessonSave[]
+  comments             Comment[]
+  share_events         ShareEvent[]
+  content_reports      ContentReport[]
+
+  @@map("lessons")
+}
+
+model Quiz {
+  id             String   @id @default(cuid())
+  lesson_id      String   @unique
+  type           QuizType
+  // full question/answer/pairs array — same shape as mobile mockData
+  questions_json Json
+  created_at     DateTime @default(now())
+
+  lesson      Lesson     @relation(fields: [lesson_id], references: [id], onDelete: Cascade)
+  quiz_passes QuizPass[]
+
+  @@map("quizzes")
+}
+
+// ─── Enrollment & Progress ────────────────────────────────────────────────────
+
+model Enrollment {
+  id          String   @id @default(cuid())
+  user_id     String
+  course_id   String
+  enrolled_at DateTime @default(now())
+
+  user   User   @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  course Course @relation(fields: [course_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, course_id])
+  @@map("enrollments")
+}
+
+model LessonCompletion {
+  id           String   @id @default(cuid())
+  user_id      String
+  lesson_id    String
+  course_id    String
+  completed_at DateTime @default(now())
+
+  user   User   @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  lesson Lesson @relation(fields: [lesson_id], references: [id], onDelete: Cascade)
+  course Course @relation(fields: [course_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, lesson_id])
+  @@map("lesson_completions")
+}
+
+model QuizPass {
+  id        String   @id @default(cuid())
+  user_id   String
+  quiz_id   String
+  lesson_id String
+  score     Int
+  passed_at DateTime @default(now())
+
+  user   User   @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  quiz   Quiz   @relation(fields: [quiz_id], references: [id], onDelete: Cascade)
+  lesson Lesson @relation(fields: [lesson_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, quiz_id])
+  @@map("quiz_passes")
+}
+
+model VideoWatchProgress {
+  id                 String   @id @default(cuid())
+  user_id            String
+  lesson_id          String
+  watched_seconds    Int      @default(0)
+  total_seconds      Int      @default(0)
+  last_position_secs Int      @default(0)
+  updated_at         DateTime @updatedAt
+
+  user   User   @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  lesson Lesson @relation(fields: [lesson_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, lesson_id])
+  @@map("video_watch_progress")
+}
+
+model Streak {
+  id                    String    @id @default(cuid())
+  user_id               String    @unique
+  current_streak        Int       @default(0)
+  longest_streak        Int       @default(0)
+  last_active_date      DateTime?
+  total_seconds_learned Int       @default(0)
+  updated_at            DateTime  @updatedAt
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@map("streaks")
+}
+
+// ─── Engagement ───────────────────────────────────────────────────────────────
+
+model LessonLike {
+  id         String   @id @default(cuid())
+  user_id    String
+  lesson_id  String
+  created_at DateTime @default(now())
+
+  user   User   @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  lesson Lesson @relation(fields: [lesson_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, lesson_id])
+  @@map("lesson_likes")
+}
+
+model LessonSave {
+  id         String   @id @default(cuid())
+  user_id    String
+  lesson_id  String
+  created_at DateTime @default(now())
+
+  user   User   @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  lesson Lesson @relation(fields: [lesson_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, lesson_id])
+  @@map("lesson_saves")
+}
+
+model Comment {
+  id          String   @id @default(cuid())
+  lesson_id   String
+  user_id     String
+  parent_id   String?
+  body        String   @db.Text
+  depth       Int      @default(0)
+  likes_count Int      @default(0)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  lesson          Lesson        @relation(fields: [lesson_id], references: [id], onDelete: Cascade)
+  user            User          @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  parent          Comment?      @relation("CommentReplies", fields: [parent_id], references: [id], onDelete: SetNull)
+  replies         Comment[]     @relation("CommentReplies")
+  likes           CommentLike[]
+  content_reports ContentReport[]
+
+  @@map("comments")
+}
+
+model CommentLike {
+  id         String   @id @default(cuid())
+  user_id    String
+  comment_id String
+  created_at DateTime @default(now())
+
+  user    User    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  comment Comment @relation(fields: [comment_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, comment_id])
+  @@map("comment_likes")
+}
+
+model ShareEvent {
+  id         String        @id @default(cuid())
+  user_id    String
+  lesson_id  String
+  course_id  String
+  platform   SharePlatform
+  created_at DateTime      @default(now())
+
+  user   User   @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  lesson Lesson @relation(fields: [lesson_id], references: [id], onDelete: Cascade)
+  course Course @relation(fields: [course_id], references: [id], onDelete: Cascade)
+
+  @@map("share_events")
+}
+
+// ─── Gamification ─────────────────────────────────────────────────────────────
+
+model Badge {
+  id        String   @id @default(cuid())
+  user_id   String
+  // badge_key: first_lesson | week_warrior | quiz_master | century_club | explorer | course_graduate
+  badge_key String
+  earned_at DateTime @default(now())
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, badge_key])
+  @@map("badges")
+}
+
+model Certificate {
+  id                 String   @id @default(cuid())
+  user_id            String
+  course_id          String
+  // e.g. EDUTOK-A1B2C3D4E5
+  certificate_number String   @unique
+  student_name       String
+  course_name        String
+  organization_name  String
+  instructor_name    String
+  category           String
+  difficulty         String
+  issued_at          DateTime @default(now())
+
+  user   User   @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  course Course @relation(fields: [course_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, course_id])
+  @@map("certificates")
+}
+
+// ─── Social ───────────────────────────────────────────────────────────────────
+
+model InstructorFollow {
+  id            String   @id @default(cuid())
+  follower_id   String
+  instructor_id String
+  created_at    DateTime @default(now())
+
+  follower   User @relation("Follower", fields: [follower_id], references: [id], onDelete: Cascade)
+  instructor User @relation("Instructor", fields: [instructor_id], references: [id], onDelete: Cascade)
+
+  @@unique([follower_id, instructor_id])
+  @@map("instructor_follows")
+}
+
+// ─── Settings & Preferences ───────────────────────────────────────────────────
+
+model UserPreference {
+  id                   String   @id @default(cuid())
+  user_id              String   @unique
+  preferred_categories Json     @default("[]")
+  onboarding_completed Boolean  @default(false)
+  updated_at           DateTime @updatedAt
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@map("user_preferences")
+}
+
+model UserSetting {
+  id                    String    @id @default(cuid())
+  user_id               String    @unique
+  font_scale            FontScale @default(md)
+  high_contrast         Boolean   @default(false)
+  notifications_enabled Boolean   @default(true)
+  daily_reminder_time   String    @default("19:00")
+  updated_at            DateTime  @updatedAt
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@map("user_settings")
+}
+
+// ─── Notifications ────────────────────────────────────────────────────────────
+
+model DeviceToken {
+  id         String         @id @default(cuid())
+  user_id    String
+  token      String
+  platform   DevicePlatform
+  created_at DateTime       @default(now())
+  updated_at DateTime       @updatedAt
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, platform])
+  @@map("device_tokens")
+}
+
+model NotificationLog {
+  id         String           @id @default(cuid())
+  user_id    String
+  type       NotificationType
+  title      String
+  body       String
+  data_json  Json?
+  read_at    DateTime?
+  created_at DateTime         @default(now())
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@map("notification_logs")
+}
+
+// ─── Media ────────────────────────────────────────────────────────────────────
+
+model MediaUpload {
+  id                   String            @id @default(cuid())
+  uploader_id          String
+  resource_type        MediaResourceType
+  cloudinary_public_id String            @unique
+  url                  String
+  bytes                Int               @default(0)
+  format               String
+  created_at           DateTime          @default(now())
+
+  uploader User @relation(fields: [uploader_id], references: [id], onDelete: Cascade)
+
+  @@map("media_uploads")
+}
+
+// ─── Lookup / Config ──────────────────────────────────────────────────────────
+
+model Category {
+  id    String @id
+  label String
+  icon  String
+  color String
+
+  @@map("categories")
+}
+
+// ─── Search ───────────────────────────────────────────────────────────────────
+
+model SearchHistory {
+  id           String   @id @default(cuid())
+  user_id      String
+  query        String
+  result_count Int      @default(0)
+  created_at   DateTime @default(now())
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@map("search_history")
+}
+
+// ─── Admin (Phase 2) ──────────────────────────────────────────────────────────
+
+model CourseApproval {
+  id          String       @id @default(cuid())
+  course_id   String
+  reviewer_id String
+  status      CourseStatus
+  notes       String?      @db.Text
+  reviewed_at DateTime     @default(now())
+
+  course   Course @relation(fields: [course_id], references: [id], onDelete: Cascade)
+  reviewer User   @relation(fields: [reviewer_id], references: [id])
+
+  @@map("course_approvals")
+}
+
+model ContentReport {
+  id          String       @id @default(cuid())
+  reporter_id String
+  lesson_id   String?
+  comment_id  String?
+  reason      String       @db.Text
+  status      ReportStatus @default(open)
+  resolved_by String?
+  resolved_at DateTime?
+  created_at  DateTime     @default(now())
+
+  reporter User     @relation("Reporter", fields: [reporter_id], references: [id], onDelete: Cascade)
+  resolver User?    @relation("Resolver", fields: [resolved_by], references: [id])
+  lesson   Lesson?  @relation(fields: [lesson_id], references: [id], onDelete: SetNull)
+  comment  Comment? @relation(fields: [comment_id], references: [id], onDelete: SetNull)
+
+  @@map("content_reports")
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  actor_id    String
+  action      String
+  target_id   String?
+  target_type String?
+  meta_json   Json?
+  created_at  DateTime @default(now())
+
+  actor User @relation(fields: [actor_id], references: [id], onDelete: Cascade)
+
+  @@map("audit_logs")
+}
+
+model Announcement {
+  id         String    @id @default(cuid())
+  author_id  String
+  title      String
+  body       String    @db.Text
+  expires_at DateTime?
+  created_at DateTime  @default(now())
+
+  author User @relation(fields: [author_id], references: [id], onDelete: Cascade)
+
+  @@map("announcements")
+}
