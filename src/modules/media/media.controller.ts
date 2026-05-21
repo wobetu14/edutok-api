@@ -14,6 +14,7 @@ export async function uploadMedia(req: Request, res: Response, next: NextFunctio
       req.user!.role as any,
       resource_type,
       req.file.buffer,
+      req.file.mimetype,
     );
     created(res, data, 'File uploaded');
   } catch (e) { next(e); }
