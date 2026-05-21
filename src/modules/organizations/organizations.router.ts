@@ -28,7 +28,7 @@ router.get('/:id/courses',
 
 router.post('/',
   authenticate,
-  authorize(Role.super_admin, Role.org_admin),
+  authorize(Role.super_admin),
   validate(schema.createOrgSchema),
   ctrl.createOrg,
 );
@@ -50,6 +50,7 @@ router.delete('/:id',
 
 router.get('/:id/members',
   authenticate,
+  authorize(Role.super_admin, Role.org_admin),
   ctrl.listMembers,
 );
 

@@ -60,7 +60,7 @@ export async function deleteOrg(req: Request, res: Response, next: NextFunction)
 // GET /api/organizations/:id/members
 export async function listMembers(req: Request, res: Response, next: NextFunction) {
   try {
-    const data = await service.listMembers(req.params.id);
+    const data = await service.listMembers(req.params.id, req.user!.id, req.user!.role as any);
     ok(res, data);
   } catch (e) { next(e); }
 }

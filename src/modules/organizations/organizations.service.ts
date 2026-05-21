@@ -185,8 +185,16 @@ export async function deleteOrg(orgId: string) {
 
 // ── Member management ─────────────────────────────────────────────────────────
 
-export async function listMembers(orgId: string) {
+export async function listMembers(orgId: string, requesterId: string, requesterRole: Role) {
   await assertOrgExists(orgId);
+
+  // org_admin can only list members of orgs they belong to
+  if (requesterRole !== Role.super_admin) {
+    const membership = await prisma.orgMember.findUnique({
+      where: { user_id_org_id: { user_id: requesterId, org_id: orgId } },
+    });
+    if (!membership) throw new ApiError(403, 'You are not a member of this organization');
+  }
 
   return prisma.orgMember.findMany({
     where:   { org_id: orgId },
