@@ -15,6 +15,16 @@ router.get('/',
   ctrl.listCourses,
 );
 
+// ── Staff: own-course management view (all statuses + visibilities) ───────────
+// Must be declared before /:id so "mine" doesn't match as a course ID param
+
+router.get('/mine',
+  authenticate,
+  authorize(Role.super_admin, Role.org_admin, Role.instructor),
+  validateQuery(schema.listMyCoursesQuerySchema),
+  ctrl.listMyCourses,
+);
+
 // GET /:id is public but uses optional auth to attach is_enrolled + instructor visibility
 router.get('/:id',
   ctrl.getCourse,

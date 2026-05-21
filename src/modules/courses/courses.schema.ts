@@ -44,3 +44,10 @@ export const listStudentsQuerySchema = z.object({
   page:  z.coerce.number().min(1).default(1),
   limit: z.coerce.number().min(1).max(100).default(20),
 });
+
+export const listMyCoursesQuerySchema = z.object({
+  page:   z.coerce.number().min(1).default(1),
+  limit:  z.coerce.number().min(1).max(100).default(20),
+  status: z.nativeEnum(CourseStatus).optional(),
+  org_id: z.string().cuid().optional(),
+});

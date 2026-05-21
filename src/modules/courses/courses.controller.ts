@@ -3,12 +3,31 @@ import { verifyAccessToken } from '../../utils/jwt';
 import * as service from './courses.service';
 import { ok, created, noContent, paginated } from '../../utils/response';
 
-// Attempts to extract the caller's ID from an optional Bearer token (no error on missing/invalid).
-function optionalUserId(req: Request): string | undefined {
+// Attempts to extract the caller's identity from an optional Bearer token (no error on missing/invalid).
+function optionalAuth(req: Request): { id?: string; role?: string } {
   const header = req.headers.authorization;
-  if (!header?.startsWith('Bearer ')) return undefined;
+  if (!header?.startsWith('Bearer ')) return {};
   const payload = verifyAccessToken(header.slice(7));
-  return payload?.sub;
+  if (!payload) return {};
+  return { id: payload.sub, role: payload.role };
+}
+
+/** @deprecated use optionalAuth */
+function optionalUserId(req: Request): string | undefined {
+  return optionalAuth(req).id;
+}
+
+// GET /api/courses/mine  (instructor/org_admin/super_admin — all statuses & visibilities)
+export async function listMyCourses(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { page, limit, status, org_id } = req.query as any;
+    const { courses, total } = await service.listMyCourses(
+      req.user!.id,
+      req.user!.role as any,
+      { page, limit, status, org_id },
+    );
+    paginated(res, courses, total, page, limit);
+  } catch (e) { next(e); }
 }
 
 // GET /api/courses
@@ -23,8 +42,8 @@ export async function listCourses(req: Request, res: Response, next: NextFunctio
 // GET /api/courses/:id
 export async function getCourse(req: Request, res: Response, next: NextFunction) {
   try {
-    const requesterId = optionalUserId(req);
-    const data = await service.getCourse(req.params.id, requesterId);
+    const { id: requesterId, role: requesterRole } = optionalAuth(req);
+    const data = await service.getCourse(req.params.id, requesterId, requesterRole);
     ok(res, data);
   } catch (e) { next(e); }
 }

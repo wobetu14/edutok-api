@@ -98,7 +98,7 @@ export async function listCourses(query: {
   };
 }
 
-export async function getCourse(courseId: string, requesterId?: string) {
+export async function getCourse(courseId: string, requesterId?: string, requesterRole?: string) {
   const course = await prisma.course.findUnique({
     where:   { id: courseId },
     include: {
@@ -107,17 +107,17 @@ export async function getCourse(courseId: string, requesterId?: string) {
       lessons: {
         orderBy: { order_index: 'asc' },
         select: {
-          id:            true,
-          title:         true,
-          type:          true,
-          order_index:   true,
-          duration_secs: true,
-          thumbnail_url: true,
-          has_quiz:      true,
-          likes_count:   true,
-          saves_count:   true,
+          id:             true,
+          title:          true,
+          type:           true,
+          order_index:    true,
+          duration_secs:  true,
+          thumbnail_url:  true,
+          has_quiz:       true,
+          likes_count:    true,
+          saves_count:    true,
           comments_count: true,
-          shares_count:  true,
+          shares_count:   true,
         },
       },
       _count: { select: { enrollments: true } },
@@ -126,10 +126,37 @@ export async function getCourse(courseId: string, requesterId?: string) {
 
   if (!course) throw new ApiError(404, 'Course not found');
 
-  // Non-public courses are invisible to everyone except the instructor
-  if (course.status !== CourseStatus.approved || course.visibility !== CourseVisibility.public) {
-    if (!requesterId || (requesterId !== course.instructor_id)) {
-      throw new ApiError(404, 'Course not found');
+  const isApproved      = course.status === CourseStatus.approved;
+  const isPublic        = course.visibility === CourseVisibility.public;
+  const isUnlisted      = course.visibility === CourseVisibility.unlisted;
+  const isPrivate       = course.visibility === CourseVisibility.private;
+
+  // Determine access:
+  // - public + approved   → anyone (auth or not)
+  // - unlisted + approved → any authenticated user (not discoverable, but link-accessible)
+  // - private or not approved → staff only (instructor, org_admin of this org, super_admin)
+
+  if (isApproved && isPublic) {
+    // open access — no checks needed
+  } else if (isApproved && isUnlisted) {
+    // Requires auth; any authenticated user with the link can view
+    if (!requesterId) throw new ApiError(404, 'Course not found');
+  } else {
+    // private course OR any non-approved status — staff only
+    if (!requesterId) throw new ApiError(404, 'Course not found');
+
+    const isInstructor = requesterId === course.instructor_id;
+    const isSuperAdmin = requesterRole === Role.super_admin;
+    let   isOrgAdmin   = false;
+
+    if (!isInstructor && !isSuperAdmin) {
+      if (requesterRole === Role.org_admin) {
+        const membership = await prisma.orgMember.findUnique({
+          where: { user_id_org_id: { user_id: requesterId, org_id: course.org_id } },
+        });
+        isOrgAdmin = !!membership;
+      }
+      if (!isOrgAdmin) throw new ApiError(404, 'Course not found');
     }
   }
 
@@ -144,6 +171,68 @@ export async function getCourse(courseId: string, requesterId?: string) {
 
   const { _count, ...rest } = course;
   return { ...rest, enrolled_count: _count.enrollments, is_enrolled };
+}
+
+// ── Instructor's own courses (all statuses + visibilities) ───────────────────
+
+export async function listMyCourses(
+  userId:   string,
+  userRole: Role,
+  query: {
+    page:      number;
+    limit:     number;
+    status?:   CourseStatus;
+    org_id?:   string;
+  },
+) {
+  const { page, limit, status, org_id } = query;
+  const skip = (page - 1) * limit;
+
+  const where: Record<string, any> = {};
+
+  if (userRole === Role.super_admin) {
+    // super_admin can see everything; filters are optional
+    if (status)  where.status  = status;
+    if (org_id)  where.org_id  = org_id;
+  } else if (userRole === Role.org_admin) {
+    // org_admin sees all courses across their orgs
+    const memberships = await prisma.orgMember.findMany({
+      where:  { user_id: userId, role: OrgRole.org_admin },
+      select: { org_id: true },
+    });
+    const orgIds = memberships.map(m => m.org_id);
+    if (orgIds.length === 0) return { courses: [], total: 0 };
+    where.org_id = org_id ? { in: orgIds.filter(id => id === org_id) } : { in: orgIds };
+    if (status) where.status = status;
+  } else {
+    // instructor only sees their own courses
+    where.instructor_id = userId;
+    if (status) where.status = status;
+    if (org_id) where.org_id = org_id;
+  }
+
+  const [courses, total] = await prisma.$transaction([
+    prisma.course.findMany({
+      where,
+      skip,
+      take:    limit,
+      orderBy: { updated_at: 'desc' },
+      include: {
+        organization: { select: { id: true, name: true, logo_url: true } },
+        _count:       { select: { lessons: true, enrollments: true } },
+      },
+    }),
+    prisma.course.count({ where }),
+  ]);
+
+  return {
+    courses: courses.map(({ _count, ...c }) => ({
+      ...c,
+      lesson_count:   _count.lessons,
+      enrolled_count: _count.enrollments,
+    })),
+    total,
+  };
 }
 
 // ── Course CRUD ───────────────────────────────────────────────────────────────
@@ -260,10 +349,19 @@ export async function submitCourse(courseId: string, userId: string, userRole: R
     throw new ApiError(409, 'Course is already submitted and awaiting review');
   }
 
-  return prisma.course.update({
-    where: { id: courseId },
-    data:  { status: CourseStatus.pending },
-  });
+  const [updated] = await prisma.$transaction([
+    prisma.course.update({ where: { id: courseId }, data: { status: CourseStatus.pending } }),
+    prisma.courseApproval.create({
+      data: {
+        course_id:    courseId,
+        submitted_by: userId,
+        submitted_at: new Date(),
+        status:       CourseStatus.pending,
+      },
+    }),
+  ]);
+
+  return updated;
 }
 
 export async function approveCourse(
@@ -292,7 +390,14 @@ export async function approveCourse(
 export async function enrollCourse(courseId: string, userId: string) {
   const course = await prisma.course.findUnique({ where: { id: courseId } });
   if (!course) throw new ApiError(404, 'Course not found');
-  if (course.status !== CourseStatus.approved || course.visibility !== CourseVisibility.public) {
+
+  // Enrollment allowed for approved public or approved unlisted courses.
+  // Private courses and non-approved courses are never enrollable.
+  const enrollable =
+    course.status === CourseStatus.approved &&
+    (course.visibility === CourseVisibility.public || course.visibility === CourseVisibility.unlisted);
+
+  if (!enrollable) {
     throw new ApiError(400, 'Course is not available for enrollment');
   }
 
