@@ -1,6 +1,7 @@
-import { Role, TwoFaMethod, FontScale } from '@prisma/client';
+import { Role, TwoFaMethod, FontScale, OrgRole } from '@prisma/client';
 import { prisma } from '../../config/database';
 import { ApiError } from '../../middleware/errorHandler';
+import { hashPassword, verifyPassword, generateSecureToken } from '../../utils/hash';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -266,6 +267,175 @@ export async function checkFollow(followerId: string, instructorId: string) {
     },
   });
   return { is_following: !!record };
+}
+
+// ── Managed account creation (org_admin creates instructor; super_admin creates org_admin) ──
+
+export async function createManagedUser(
+  creatorId:   string,
+  creatorRole: Role,
+  data: {
+    full_name: string;
+    username:  string;
+    phone:     string;
+    email:     string;
+    role:      Role;
+    org_id?:   string;   // required when creator is org_admin
+  },
+) {
+  // super_admin can create org_admin or instructor; org_admin can only create instructor
+  if (creatorRole === Role.org_admin) {
+    if (data.role !== Role.instructor) {
+      throw new ApiError(403, 'Organization admins can only create instructor accounts');
+    }
+    if (!data.org_id) throw new ApiError(400, 'org_id is required when creating an instructor');
+
+    // Verify creator is an org_admin of that org
+    const membership = await prisma.orgMember.findUnique({
+      where: { user_id_org_id: { user_id: creatorId, org_id: data.org_id } },
+    });
+    if (!membership || membership.role !== OrgRole.org_admin) {
+      throw new ApiError(403, 'You are not an admin of this organization');
+    }
+  } else if (creatorRole === Role.super_admin) {
+    if (data.role === Role.learner || data.role === Role.super_admin) {
+      throw new ApiError(400, 'Super admin can only create org_admin or instructor accounts via this endpoint');
+    }
+  } else {
+    throw new ApiError(403, 'Insufficient permissions to create managed accounts');
+  }
+
+  // Uniqueness checks
+  const existing = await prisma.user.findFirst({
+    where: { OR: [{ username: data.username }, { phone: data.phone }] },
+  });
+  if (existing?.username === data.username) throw new ApiError(409, 'Username already taken');
+  if (existing?.phone    === data.phone)    throw new ApiError(409, 'Phone number already registered');
+  if (data.email) {
+    const taken = await prisma.user.findUnique({ where: { email: data.email } });
+    if (taken) throw new ApiError(409, 'Email already registered');
+  }
+
+  // Generate a secure temporary password (12 chars: letters + digits)
+  const CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+  const tempPassword = Array.from(
+    { length: 12 },
+    () => CHARS[Math.floor(Math.random() * CHARS.length)],
+  ).join('');
+
+  const password_hash = await hashPassword(tempPassword);
+
+  const user = await prisma.$transaction(async (tx) => {
+    const u = await tx.user.create({
+      data: {
+        full_name:            data.full_name,
+        username:             data.username,
+        phone:                data.phone,
+        email:                data.email,
+        password_hash,
+        role:                 data.role,
+        must_change_password: true,
+        two_fa_method:        TwoFaMethod.none,
+      },
+    });
+    await tx.streak.create({ data: { user_id: u.id } });
+    await tx.userPreference.create({ data: { user_id: u.id } });
+    await tx.userSetting.create({ data: { user_id: u.id } });
+
+    // If an org was specified, add the user as a member
+    if (data.org_id) {
+      await tx.orgMember.create({
+        data: {
+          user_id: u.id,
+          org_id:  data.org_id,
+          role:    data.role === Role.org_admin ? OrgRole.org_admin : OrgRole.instructor,
+        },
+      });
+    }
+
+    return u;
+  });
+
+  const { password_hash: _ph, ...safeUser } = user;
+  // tempPassword is shown once — it is NOT stored in plaintext anywhere
+  return { user: safeUser, tempPassword };
+}
+
+// ── Account activation / deactivation ────────────────────────────────────────
+
+export async function setActiveStatus(
+  targetId:    string,
+  isActive:    boolean,
+  requesterId: string,
+  requesterRole: Role,
+) {
+  const target = await prisma.user.findUnique({ where: { id: targetId } });
+  if (!target) throw new ApiError(404, 'User not found');
+  if (target.id === requesterId) throw new ApiError(400, 'Cannot change your own active status');
+  if (target.role === Role.super_admin) throw new ApiError(403, 'Cannot deactivate a super admin');
+
+  // org_admin can only deactivate instructors within their org
+  if (requesterRole === Role.org_admin) {
+    if (target.role !== Role.instructor) {
+      throw new ApiError(403, 'Organization admins can only activate/deactivate instructors');
+    }
+    const sharedOrg = await prisma.orgMember.findFirst({
+      where: {
+        user_id: requesterId,
+        role:    OrgRole.org_admin,
+        org: {
+          members: { some: { user_id: targetId } },
+        },
+      },
+    });
+    if (!sharedOrg) {
+      throw new ApiError(403, 'That instructor does not belong to any of your organizations');
+    }
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.user.update({ where: { id: targetId }, data: { is_active: isActive } });
+    // Revoke all active sessions when deactivating
+    if (!isActive) {
+      await tx.refreshToken.updateMany({
+        where: { user_id: targetId, revoked_at: null },
+        data:  { revoked_at: new Date() },
+      });
+    }
+  });
+
+  return { is_active: isActive };
+}
+
+// ── Change own password ───────────────────────────────────────────────────────
+
+export async function changePassword(
+  userId:          string,
+  currentPassword: string,
+  newPassword:     string,
+) {
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
+  if (!(await verifyPassword(currentPassword, user.password_hash))) {
+    throw new ApiError(400, 'Current password is incorrect');
+  }
+  if (currentPassword === newPassword) {
+    throw new ApiError(400, 'New password must be different from the current password');
+  }
+
+  const password_hash = await hashPassword(newPassword);
+
+  await prisma.$transaction([
+    prisma.user.update({
+      where: { id: userId },
+      data:  { password_hash, must_change_password: false },
+    }),
+    prisma.refreshToken.updateMany({
+      where: { user_id: userId, revoked_at: null },
+      data:  { revoked_at: new Date() },
+    }),
+  ]);
+
+  return { message: 'Password updated. Please log in again with your new password.' };
 }
 
 // ── Admin — list users ────────────────────────────────────────────────────────

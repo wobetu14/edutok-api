@@ -42,3 +42,21 @@ export const listUsersQuerySchema = z.object({
   role:   z.nativeEnum(Role).optional(),
   search: z.string().max(100).optional(),
 });
+
+export const createManagedUserSchema = z.object({
+  full_name: z.string().min(2).max(100).trim(),
+  username:  z.string().min(3).max(20).regex(/^[a-zA-Z0-9_]+$/, 'Alphanumeric and underscore only'),
+  phone:     z.string().min(7).max(20),
+  email:     z.string().email(),
+  role:      z.enum(['org_admin', 'instructor']),
+  org_id:    z.string().cuid().optional(),
+});
+
+export const setActiveSchema = z.object({
+  is_active: z.boolean(),
+});
+
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1),
+  newPassword:     z.string().min(8, 'New password must be at least 8 characters'),
+});

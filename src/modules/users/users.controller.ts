@@ -90,6 +90,39 @@ export async function checkFollow(req: Request, res: Response, next: NextFunctio
   } catch (e) { next(e); }
 }
 
+// POST /api/users/managed  (org_admin creates instructor; super_admin creates org_admin)
+export async function createManagedUser(req: Request, res: Response, next: NextFunction) {
+  try {
+    const data = await service.createManagedUser(req.user!.id, req.user!.role as any, req.body);
+    ok(res, data, 'Account created. Share the temporary password with the user — it will not be shown again.');
+  } catch (e) { next(e); }
+}
+
+// PATCH /api/users/:id/active  (org_admin deactivates instructor; super_admin any user)
+export async function setActiveStatus(req: Request, res: Response, next: NextFunction) {
+  try {
+    const data = await service.setActiveStatus(
+      req.params.id,
+      req.body.is_active,
+      req.user!.id,
+      req.user!.role as any,
+    );
+    ok(res, data, req.body.is_active ? 'Account activated' : 'Account deactivated');
+  } catch (e) { next(e); }
+}
+
+// PATCH /api/users/me/password  (change own password)
+export async function changePassword(req: Request, res: Response, next: NextFunction) {
+  try {
+    const data = await service.changePassword(
+      req.user!.id,
+      req.body.currentPassword,
+      req.body.newPassword,
+    );
+    ok(res, data);
+  } catch (e) { next(e); }
+}
+
 // GET /api/users  (admin)
 export async function listUsers(req: Request, res: Response, next: NextFunction) {
   try {

@@ -13,6 +13,7 @@ const router = Router();
 
 router.get('/me',               authenticate, ctrl.getMe);
 router.patch('/me',             authenticate, validate(schema.updateMeSchema),          ctrl.updateMe);
+router.patch('/me/password',    authenticate, validate(schema.changePasswordSchema),    ctrl.changePassword);
 router.get('/me/settings',      authenticate, ctrl.getSettings);
 router.patch('/me/settings',    authenticate, validate(schema.updateSettingsSchema),    ctrl.updateSettings);
 router.get('/me/preferences',   authenticate, ctrl.getPreferences);
@@ -20,6 +21,14 @@ router.patch('/me/preferences', authenticate, validate(schema.updatePreferencesS
 router.patch('/me/2fa',         authenticate, validate(schema.update2faSchema),         ctrl.update2fa);
 
 // ── Admin ─────────────────────────────────────────────────────────────────────
+
+// Create managed accounts (org_admin → instructor; super_admin → org_admin/instructor)
+router.post('/managed',
+  authenticate,
+  authorize(Role.super_admin, Role.org_admin),
+  validate(schema.createManagedUserSchema),
+  ctrl.createManagedUser,
+);
 
 router.get('/',
   authenticate,
@@ -33,6 +42,14 @@ router.patch('/:id/role',
   authorize(Role.super_admin),
   validate(schema.changeRoleSchema),
   ctrl.changeRole,
+);
+
+// Activate / deactivate a user (org_admin for instructors; super_admin for anyone)
+router.patch('/:id/active',
+  authenticate,
+  authorize(Role.super_admin, Role.org_admin),
+  validate(schema.setActiveSchema),
+  ctrl.setActiveStatus,
 );
 
 router.delete('/:id',
