@@ -28,6 +28,7 @@ router.post('/2fa/verify',      validate(schema.twoFaVerifySchema),    ctrl.twoF
 
 // ── Authenticated ─────────────────────────────────────────────────────────────
 
-router.post('/logout',          authenticate, validate(schema.logoutSchema), ctrl.logout);
+router.post('/logout',                       authenticate, validate(schema.logoutSchema),                    ctrl.logout);
+router.post('/change-password-first-login',  authenticate, validate(schema.changePasswordFirstLoginSchema),  ctrl.changePasswordFirstLogin);
 
 export default router;

@@ -64,3 +64,7 @@ export const resetPasswordSchema = z.object({
   token:       z.string().min(1),
   newPassword: z.string().min(8, 'Password must be at least 8 characters'),
 });
+
+export const changePasswordFirstLoginSchema = z.object({
+  newPassword: z.string().min(8, 'Password must be at least 8 characters'),
+});

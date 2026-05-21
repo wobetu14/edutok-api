@@ -97,3 +97,11 @@ export async function resetPassword(req: Request, res: Response, next: NextFunct
     ok(res, result);
   } catch (e) { next(e); }
 }
+
+// POST /api/auth/change-password-first-login  (authenticated — must_change_password users)
+export async function changePasswordFirstLogin(req: Request, res: Response, next: NextFunction) {
+  try {
+    const tokens = await service.changePasswordFirstLogin(req.user!.id, req.body.newPassword);
+    ok(res, tokens, 'Password changed. You are now logged in with your new credentials.');
+  } catch (e) { next(e); }
+}

@@ -130,17 +130,27 @@ export async function login(username: string, password: string) {
     throw new ApiError(401, 'Invalid username or password');
   }
 
+  if (!user.is_active) {
+    throw new ApiError(403, 'Account is deactivated. Contact your organization administrator.');
+  }
+
   if (user.two_fa_enabled) {
     const challengeToken = signChallengeToken(user.id);
     return {
-      requires2fa:    true,
+      requires2fa:           true,
+      must_change_password:  user.must_change_password,
       challengeToken,
-      two_fa_method:  user.two_fa_method,
+      two_fa_method:         user.two_fa_method,
     };
   }
 
   const tokens = await issueTokens(user.id, user.role, user.username);
-  return { requires2fa: false, user: sanitize(user), ...tokens };
+  return {
+    requires2fa:          false,
+    must_change_password: user.must_change_password,
+    user:                 sanitize(user),
+    ...tokens,
+  };
 }
 
 // ── Refresh tokens ────────────────────────────────────────────────────────────
@@ -395,7 +405,34 @@ export async function verify2faCode(challengeToken: string, code: string) {
   }
 
   const tokens = await issueTokens(user.id, user.role, user.username);
-  return { user: sanitize(user), ...tokens };
+  return { must_change_password: user.must_change_password, user: sanitize(user), ...tokens };
+}
+
+// ── First-login mandatory password change ─────────────────────────────────────
+
+export async function changePasswordFirstLogin(userId: string, newPassword: string) {
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
+  if (!user.must_change_password) {
+    throw new ApiError(400, 'Password change is not required for this account');
+  }
+
+  const password_hash = await hashPassword(newPassword);
+
+  await prisma.$transaction([
+    prisma.user.update({
+      where: { id: userId },
+      data:  { password_hash, must_change_password: false },
+    }),
+    // Revoke all existing refresh tokens so stale sessions don't persist
+    prisma.refreshToken.updateMany({
+      where: { user_id: userId, revoked_at: null },
+      data:  { revoked_at: new Date() },
+    }),
+  ]);
+
+  // Issue fresh tokens after successful password change
+  const updated = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
+  return issueTokens(updated.id, updated.role, updated.username);
 }
 
 // ── Forgot password ───────────────────────────────────────────────────────────
