@@ -36,6 +36,7 @@ export async function getPlatformStats() {
     total_orgs,
     total_courses,
     total_lessons,
+    total_enrollments,
     active_today,
     pending_courses,
     open_reports,
@@ -44,6 +45,7 @@ export async function getPlatformStats() {
     prisma.organization.count(),
     prisma.course.count(),
     prisma.lesson.count(),
+    prisma.enrollment.count(),
     prisma.streak.count({ where: { last_active_date: { gte: today } } }),
     prisma.course.count({ where: { status: CourseStatus.pending } }),
     prisma.contentReport.count({ where: { status: ReportStatus.open } }),
@@ -54,6 +56,7 @@ export async function getPlatformStats() {
     total_orgs,
     total_courses,
     total_lessons,
+    total_enrollments,
     active_today,
     pending_courses,
     open_reports,
@@ -125,7 +128,7 @@ export async function listPendingCourses(
       select: { org_id: true },
     });
     const orgIds = adminMemberships.map(m => m.org_id);
-    if (orgIds.length === 0) return { data: [], total: 0, page, limit };
+    if (orgIds.length === 0) return { courses: [], total: 0 };
     where.org_id = { in: orgIds };
   }
 
@@ -145,10 +148,8 @@ export async function listPendingCourses(
   ]);
 
   return {
-    data: courses.map(({ _count, ...c }) => ({ ...c, lesson_count: _count.lessons })),
+    courses: courses.map(({ _count, ...c }) => ({ ...c, lesson_count: _count.lessons })),
     total,
-    page,
-    limit,
   };
 }
 
@@ -277,7 +278,7 @@ export async function listAuditLogs(query: {
     prisma.auditLog.count({ where }),
   ]);
 
-  return { data: logs, total, page, limit };
+  return { logs, total };
 }
 
 // ── Org-scoped stats (for org_admin) ─────────────────────────────────────────
