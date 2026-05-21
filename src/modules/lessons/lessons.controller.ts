@@ -5,7 +5,7 @@ import { ok, created, noContent } from '../../utils/response';
 // GET /api/lessons/:id
 export async function getLesson(req: Request, res: Response, next: NextFunction) {
   try {
-    const data = await service.getLesson(req.params.id, req.user!.id);
+    const data = await service.getLesson(req.params.id, req.user!.id, req.user!.role as any);
     ok(res, data);
   } catch (e) { next(e); }
 }

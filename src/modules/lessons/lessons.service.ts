@@ -1,4 +1,4 @@
-import { Role, OrgRole, LessonType, NotificationType } from '@prisma/client';
+import { Role, OrgRole, LessonType, NotificationType, CourseStatus, CourseVisibility } from '@prisma/client';
 import { prisma } from '../../config/database';
 import { ApiError } from '../../middleware/errorHandler';
 import { updateStreak, checkLessonBadges } from '../../utils/gamification';
@@ -38,12 +38,39 @@ async function assertEditAccess(lesson: LessonWithCourse, userId: string, userRo
 
 // ── Learner endpoints ─────────────────────────────────────────────────────────
 
-export async function getLesson(lessonId: string, userId: string) {
+export async function getLesson(lessonId: string, userId: string, userRole: Role) {
   const lesson = await prisma.lesson.findUnique({
     where:   { id: lessonId },
-    include: { quiz: true },
+    include: {
+      quiz:   true,
+      course: { select: { org_id: true, instructor_id: true, status: true, visibility: true } },
+    },
   });
   if (!lesson) throw new ApiError(404, 'Lesson not found');
+
+  // Staff can always access any lesson regardless of enrollment
+  const isStaff =
+    userRole === Role.super_admin ||
+    userRole === Role.instructor  ||
+    userRole === Role.org_admin;
+
+  if (!isStaff) {
+    // Lessons from approved public/unlisted courses are freely viewable (discovery feed, shared links).
+    // Only private courses or non-approved courses require enrollment.
+    const isOpenAccess =
+      lesson.course.status     === CourseStatus.approved &&
+      (lesson.course.visibility === CourseVisibility.public ||
+       lesson.course.visibility === CourseVisibility.unlisted);
+
+    if (!isOpenAccess) {
+      const enrollment = await prisma.enrollment.findUnique({
+        where: { user_id_course_id: { user_id: userId, course_id: lesson.course_id } },
+      });
+      if (!enrollment) {
+        throw new ApiError(403, 'You must be enrolled in this course to access its lessons');
+      }
+    }
+  }
 
   // Track whether the user has completed this lesson
   const completion = await prisma.lessonCompletion.findUnique({
@@ -56,7 +83,8 @@ export async function getLesson(lessonId: string, userId: string) {
     quiz = sanitizeQuizForClient(lesson.quiz);
   }
 
-  return { ...lesson, quiz, is_completed: !!completion };
+  const { course: _course, ...lessonData } = lesson;
+  return { ...lessonData, quiz, is_completed: !!completion };
 }
 
 export async function completeLesson(lessonId: string, userId: string) {
