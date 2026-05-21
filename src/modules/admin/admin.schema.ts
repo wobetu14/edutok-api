@@ -36,7 +36,12 @@ export const listAuditLogsQuerySchema = z.object({
 });
 
 export const createAnnouncementBodySchema = z.object({
-  title:      z.string().min(1).max(200).trim(),
-  body:       z.string().min(1).max(5000).trim(),
-  expires_at: z.coerce.date().optional(),
+  title:       z.string().min(1).max(200).trim(),
+  body:        z.string().min(1).max(5000).trim(),
+  target_role: z.enum(['learner', 'instructor', 'org_admin', 'super_admin']).optional(),
+  expires_at:  z.coerce.date().optional(),
+});
+
+export const orgStatsQuerySchema = z.object({
+  org_id: z.string().cuid(),
 });

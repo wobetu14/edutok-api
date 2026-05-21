@@ -19,6 +19,15 @@ router.get('/stats',
   ctrl.getStats,
 );
 
+// ── Org-scoped stats (org_admin + super_admin) ────────────────────────────────
+
+router.get('/org-stats',
+  authenticate,
+  saOa,
+  validateQuery(schema.orgStatsQuerySchema),
+  ctrl.getOrgStats,
+);
+
 // ── User management ───────────────────────────────────────────────────────────
 
 router.get('/users',
