@@ -10,12 +10,12 @@ type CloudinaryResourceType = 'image' | 'video' | 'raw';
 // ── Per-type configuration ────────────────────────────────────────────────────
 
 const FOLDER: Record<MediaResourceType, string> = {
-  avatar:           'edutok_app/avatars',
-  course_thumbnail: 'edutok_app/course_thumbnails',
-  lesson_image:     'edutok_app/lesson_images',
-  org_logo:         'edutok_app/org_logos',
-  lesson_video:     'edutok_app/lesson_videos',
-  lesson_pdf:       'edutok_app/lesson_pdfs',
+  avatar:           'edutok-app/avatars',
+  course_thumbnail: 'edutok-app/course_thumbnails',
+  lesson_image:     'edutok-app/lesson_images',
+  org_logo:         'edutok-app/org_logos',
+  lesson_video:     'edutok-app/lesson_videos',
+  lesson_pdf:       'edutok-app/lesson_pdfs',
 };
 
 // Cloudinary resource_type for each of our types
