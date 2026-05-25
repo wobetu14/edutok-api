@@ -339,20 +339,28 @@ export async function getOrgStats(orgId: string, requesterId: string, requesterR
 
 // ── Announcements ─────────────────────────────────────────────────────────────
 
-export async function listAnnouncements(requesterRole?: string) {
-  const now = new Date();
+export async function listAnnouncements(requesterRole?: string, page = 1, limit = 10) {
+  const skip = (page - 1) * limit;
+  const now  = new Date();
   const where: any = {
     OR: [{ expires_at: null }, { expires_at: { gte: now } }],
   };
-  // Filter to announcements targeting this role or all roles
   if (requesterRole) {
     where.AND = [{ OR: [{ target_role: null }, { target_role: requesterRole }] }];
   }
-  return prisma.announcement.findMany({
-    where,
-    orderBy: { created_at: 'desc' },
-    include: { author: { select: { id: true, full_name: true } } },
-  });
+
+  const [announcements, total] = await prisma.$transaction([
+    prisma.announcement.findMany({
+      where,
+      skip,
+      take:    limit,
+      orderBy: { created_at: 'desc' },
+      include: { author: { select: { id: true, full_name: true } } },
+    }),
+    prisma.announcement.count({ where }),
+  ]);
+
+  return { announcements, total };
 }
 
 export async function createAnnouncement(

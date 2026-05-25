@@ -82,7 +82,9 @@ export async function listAuditLogs(req: Request, res: Response, next: NextFunct
 // GET /api/admin/announcements
 export async function listAnnouncements(req: Request, res: Response, next: NextFunction) {
   try {
-    const data = await service.listAnnouncements(req.user!.role);
+    const page  = Number(req.query.page)  || 1;
+    const limit = Number(req.query.limit) || 10;
+    const data  = await service.listAnnouncements(req.user!.role, page, limit);
     ok(res, data);
   } catch (e) { next(e); }
 }
