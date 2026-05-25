@@ -298,8 +298,8 @@ export async function createManagedUser(
       throw new ApiError(403, 'You are not an admin of this organization');
     }
   } else if (creatorRole === Role.super_admin) {
-    if (data.role === Role.learner || data.role === Role.super_admin) {
-      throw new ApiError(400, 'Super admin can only create org_admin or instructor accounts via this endpoint');
+    if (data.role === Role.learner) {
+      throw new ApiError(400, 'Cannot create learner accounts via this endpoint');
     }
   } else {
     throw new ApiError(403, 'Insufficient permissions to create managed accounts');

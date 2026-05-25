@@ -48,7 +48,7 @@ export const createManagedUserSchema = z.object({
   username:  z.string().min(3).max(20).regex(/^[a-zA-Z0-9_]+$/, 'Alphanumeric and underscore only'),
   phone:     z.string().min(7).max(20),
   email:     z.string().email(),
-  role:      z.enum(['org_admin', 'instructor']),
+  role:      z.enum(['org_admin', 'instructor', 'super_admin']),
   org_id:    z.string().cuid().optional(),
 });
 
