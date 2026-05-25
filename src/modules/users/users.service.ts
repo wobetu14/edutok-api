@@ -441,24 +441,44 @@ export async function changePassword(
 // ── Admin — list users ────────────────────────────────────────────────────────
 
 export async function listUsers(query: {
-  page:    number;
-  limit:   number;
-  role?:   Role;
-  search?: string;
+  page:          number;
+  limit:         number;
+  role?:         Role;
+  search?:       string;
+  requesterId:   string;
+  requesterRole: Role;
 }) {
-  const { page, limit, role, search } = query;
-  const skip  = (page - 1) * limit;
+  const { page, limit, role, search, requesterId, requesterRole } = query;
+  const skip = (page - 1) * limit;
 
-  const where: Record<string, any> = {};
-  if (role)   where.role = role;
-  if (search) {
-    where.OR = [
-      { username:  { contains: search } },
-      { full_name: { contains: search } },
-      { email:     { contains: search } },
-      { phone:     { contains: search } },
-    ];
+  const conditions: any[] = [];
+
+  if (requesterRole === Role.org_admin) {
+    // org_admin sees only instructors belonging to their orgs
+    const memberships = await prisma.orgMember.findMany({
+      where:  { user_id: requesterId, role: OrgRole.org_admin },
+      select: { org_id: true },
+    });
+    const orgIds = memberships.map((m) => m.org_id);
+    conditions.push({ role: Role.instructor });
+    conditions.push({ org_memberships: { some: { org_id: { in: orgIds } } } });
+  } else {
+    // super_admin sees everyone; honour optional role filter
+    if (role) conditions.push({ role });
   }
+
+  if (search) {
+    conditions.push({
+      OR: [
+        { username:  { contains: search } },
+        { full_name: { contains: search } },
+        { email:     { contains: search } },
+        { phone:     { contains: search } },
+      ],
+    });
+  }
+
+  const where = conditions.length > 0 ? { AND: conditions } : {};
 
   const [users, total] = await prisma.$transaction([
     prisma.user.findMany({
@@ -473,18 +493,158 @@ export async function listUsers(query: {
         email:             true,
         phone:             true,
         role:              true,
+        is_active:         true,
         avatar_url:        true,
         is_phone_verified: true,
         is_email_verified: true,
         two_fa_enabled:    true,
-        two_fa_method:     true,
+        must_change_password: true,
         created_at:        true,
+        org_memberships: {
+          select: {
+            role: true,
+            org:  { select: { id: true, name: true } },
+          },
+        },
       },
     }),
     prisma.user.count({ where }),
   ]);
 
   return { users, total };
+}
+
+// ── Admin — edit managed user profile ────────────────────────────────────────
+
+export async function updateManagedUser(
+  targetId:      string,
+  data:          { full_name?: string; phone?: string; email?: string },
+  requesterId:   string,
+  requesterRole: Role,
+) {
+  const target = await prisma.user.findUnique({ where: { id: targetId } });
+  if (!target) throw new ApiError(404, 'User not found');
+  if (target.id === requesterId) throw new ApiError(400, 'Use /me to update your own profile');
+  if (target.role === Role.super_admin) throw new ApiError(403, 'Cannot edit a super admin account');
+
+  if (requesterRole === Role.org_admin) {
+    if (target.role !== Role.instructor) {
+      throw new ApiError(403, 'Organization admins can only edit instructor accounts');
+    }
+    const sharedOrg = await prisma.orgMember.findFirst({
+      where: {
+        user_id: requesterId,
+        role:    OrgRole.org_admin,
+        org:     { members: { some: { user_id: targetId } } },
+      },
+    });
+    if (!sharedOrg) throw new ApiError(403, 'That instructor does not belong to any of your organizations');
+  } else if (requesterRole !== Role.super_admin) {
+    throw new ApiError(403, 'Insufficient permissions');
+  }
+
+  // Uniqueness checks
+  if (data.phone && data.phone !== target.phone) {
+    const taken = await prisma.user.findUnique({ where: { phone: data.phone } });
+    if (taken) throw new ApiError(409, 'Phone number already in use');
+  }
+  if (data.email && data.email !== target.email) {
+    const taken = await prisma.user.findUnique({ where: { email: data.email } });
+    if (taken) throw new ApiError(409, 'Email already in use');
+  }
+
+  const patch: Record<string, any> = {};
+  if (data.full_name !== undefined) patch.full_name = data.full_name;
+  if (data.phone !== undefined && data.phone !== target.phone) {
+    patch.phone             = data.phone;
+    patch.is_phone_verified = false;
+  }
+  if (data.email !== undefined && data.email !== target.email) {
+    patch.email             = data.email;
+    patch.is_email_verified = false;
+  }
+
+  const updated = await prisma.user.update({ where: { id: targetId }, data: patch });
+  return sanitize(updated);
+}
+
+// ── Admin — reset managed user password ──────────────────────────────────────
+
+export async function adminResetPassword(
+  targetId:      string,
+  requesterId:   string,
+  requesterRole: Role,
+) {
+  const target = await prisma.user.findUnique({ where: { id: targetId } });
+  if (!target) throw new ApiError(404, 'User not found');
+  if (target.id === requesterId) throw new ApiError(400, 'Cannot reset your own password via this endpoint');
+  if (target.role === Role.super_admin) throw new ApiError(403, 'Cannot reset a super admin password');
+
+  if (requesterRole === Role.org_admin) {
+    if (target.role !== Role.instructor) {
+      throw new ApiError(403, 'Organization admins can only reset instructor passwords');
+    }
+    const sharedOrg = await prisma.orgMember.findFirst({
+      where: {
+        user_id: requesterId,
+        role:    OrgRole.org_admin,
+        org:     { members: { some: { user_id: targetId } } },
+      },
+    });
+    if (!sharedOrg) throw new ApiError(403, 'That instructor does not belong to any of your organizations');
+  } else if (requesterRole !== Role.super_admin) {
+    throw new ApiError(403, 'Insufficient permissions');
+  }
+
+  const CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+  const tempPassword = Array.from(
+    { length: 12 },
+    () => CHARS[Math.floor(Math.random() * CHARS.length)],
+  ).join('');
+  const password_hash = await hashPassword(tempPassword);
+
+  await prisma.$transaction([
+    prisma.user.update({
+      where: { id: targetId },
+      data:  { password_hash, must_change_password: true },
+    }),
+    prisma.refreshToken.updateMany({
+      where: { user_id: targetId, revoked_at: null },
+      data:  { revoked_at: new Date() },
+    }),
+  ]);
+
+  return { tempPassword };
+}
+
+// ── Admin — reassign user to a different organization ────────────────────────
+
+export async function reassignOrg(
+  targetId:    string,
+  newOrgId:    string,
+  requesterId: string,
+) {
+  if (targetId === requesterId) throw new ApiError(400, 'Cannot reassign your own organization');
+
+  const target = await prisma.user.findUnique({ where: { id: targetId } });
+  if (!target) throw new ApiError(404, 'User not found');
+  if (target.role === Role.super_admin || target.role === Role.learner) {
+    throw new ApiError(400, 'Can only reassign org_admin or instructor accounts');
+  }
+
+  const org = await prisma.organization.findUnique({ where: { id: newOrgId } });
+  if (!org) throw new ApiError(404, 'Organization not found');
+
+  const newOrgRole = target.role === Role.org_admin ? OrgRole.org_admin : OrgRole.instructor;
+
+  await prisma.$transaction(async (tx) => {
+    await tx.orgMember.deleteMany({ where: { user_id: targetId } });
+    await tx.orgMember.create({
+      data: { user_id: targetId, org_id: newOrgId, role: newOrgRole },
+    });
+  });
+
+  return { org_id: newOrgId, org_name: org.name };
 }
 
 // ── Admin — change role ───────────────────────────────────────────────────────

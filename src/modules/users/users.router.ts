@@ -30,11 +30,35 @@ router.post('/managed',
   ctrl.createManagedUser,
 );
 
+// List users — super_admin sees all; org_admin sees their org's instructors
 router.get('/',
   authenticate,
-  authorize(Role.super_admin),
+  authorize(Role.super_admin, Role.org_admin),
   validateQuery(schema.listUsersQuerySchema),
   ctrl.listUsers,
+);
+
+// Edit a managed user's profile (super_admin edits org_admin/instructor; org_admin edits own instructors)
+router.patch('/:id',
+  authenticate,
+  authorize(Role.super_admin, Role.org_admin),
+  validate(schema.updateManagedUserSchema),
+  ctrl.updateManagedUser,
+);
+
+// Reset a managed user's password (generates new temp password)
+router.post('/:id/reset-password',
+  authenticate,
+  authorize(Role.super_admin, Role.org_admin),
+  ctrl.adminResetPassword,
+);
+
+// Reassign user to a different organization (super_admin only)
+router.patch('/:id/reassign-org',
+  authenticate,
+  authorize(Role.super_admin),
+  validate(schema.reassignOrgSchema),
+  ctrl.reassignOrg,
 );
 
 router.patch('/:id/role',

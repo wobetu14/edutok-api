@@ -123,12 +123,52 @@ export async function changePassword(req: Request, res: Response, next: NextFunc
   } catch (e) { next(e); }
 }
 
-// GET /api/users  (admin)
+// GET /api/users  (super_admin or org_admin)
 export async function listUsers(req: Request, res: Response, next: NextFunction) {
   try {
     const { page, limit, role, search } = req.query as any;
-    const { users, total } = await service.listUsers({ page, limit, role, search });
+    const { users, total } = await service.listUsers({
+      page,
+      limit,
+      role,
+      search,
+      requesterId:   req.user!.id,
+      requesterRole: req.user!.role as any,
+    });
     paginated(res, users, total, page, limit);
+  } catch (e) { next(e); }
+}
+
+// PATCH /api/users/:id  (edit managed user — super_admin edits org_admin; org_admin edits instructor)
+export async function updateManagedUser(req: Request, res: Response, next: NextFunction) {
+  try {
+    const data = await service.updateManagedUser(
+      req.params.id,
+      req.body,
+      req.user!.id,
+      req.user!.role as any,
+    );
+    ok(res, data, 'User updated');
+  } catch (e) { next(e); }
+}
+
+// POST /api/users/:id/reset-password  (admin resets managed user's password)
+export async function adminResetPassword(req: Request, res: Response, next: NextFunction) {
+  try {
+    const data = await service.adminResetPassword(
+      req.params.id,
+      req.user!.id,
+      req.user!.role as any,
+    );
+    ok(res, data, 'Password reset. Share the temporary password securely — it will not be shown again.');
+  } catch (e) { next(e); }
+}
+
+// PATCH /api/users/:id/reassign-org  (super_admin only)
+export async function reassignOrg(req: Request, res: Response, next: NextFunction) {
+  try {
+    const data = await service.reassignOrg(req.params.id, req.body.org_id, req.user!.id);
+    ok(res, data, 'Organization reassigned');
   } catch (e) { next(e); }
 }
 

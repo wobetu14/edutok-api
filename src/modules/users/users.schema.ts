@@ -56,6 +56,16 @@ export const setActiveSchema = z.object({
   is_active: z.boolean(),
 });
 
+export const updateManagedUserSchema = z.object({
+  full_name: z.string().min(2).max(100).trim().optional(),
+  phone:     z.string().min(7).max(20).optional(),
+  email:     z.string().email().optional(),
+});
+
+export const reassignOrgSchema = z.object({
+  org_id: z.string().cuid('Invalid organization ID'),
+});
+
 export const changePasswordSchema = z.object({
   currentPassword: z.string().min(1),
   newPassword:     z.string().min(8, 'New password must be at least 8 characters'),
