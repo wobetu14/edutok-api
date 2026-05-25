@@ -97,6 +97,12 @@ enum ReportStatus {
   dismissed
 }
 
+enum ApplicationStatus {
+  pending
+  approved
+  rejected
+}
+
 enum FontScale {
   sm
   md
@@ -156,8 +162,9 @@ model User {
   password_reset_tokens PasswordResetToken[]
   phone_verifications   PhoneVerification[]
   email_verifications   EmailVerification[]
-  submitted_course_approvals CourseApproval[] @relation("CourseApprovalSubmitter")
-  reviewed_course_approvals  CourseApproval[] @relation("CourseApprovalReviewer")
+  submitted_course_approvals  CourseApproval[]    @relation("CourseApprovalSubmitter")
+  reviewed_course_approvals   CourseApproval[]    @relation("CourseApprovalReviewer")
+  reviewed_org_applications   OrgApplication[]    @relation("OrgApplicationReviewer")
   content_reports            ContentReport[]  @relation("Reporter")
   resolved_reports      ContentReport[]      @relation("Resolver")
   audit_logs            AuditLog[]
@@ -236,6 +243,9 @@ model Organization {
   created_at    DateTime  @default(now())
   updated_at    DateTime  @updatedAt
 
+  is_active        Boolean   @default(true)
+  suspended_reason String?
+
   owner   User        @relation("OrgOwner", fields: [owner_user_id], references: [id])
   members OrgMember[]
   courses Course[]
@@ -255,6 +265,26 @@ model OrgMember {
 
   @@unique([user_id, org_id])
   @@map("org_members")
+}
+
+model OrgApplication {
+  id            String            @id @default(cuid())
+  org_name      String
+  contact_name  String
+  contact_email String
+  contact_phone String?
+  website       String?
+  description   String?           @db.Text
+  status        ApplicationStatus @default(pending)
+  reviewer_id   String?
+  reviewed_at   DateTime?
+  reject_reason String?
+  created_at    DateTime          @default(now())
+  updated_at    DateTime          @updatedAt
+
+  reviewer User? @relation("OrgApplicationReviewer", fields: [reviewer_id], references: [id])
+
+  @@map("org_applications")
 }
 
 // ─── Courses & Lessons ────────────────────────────────────────────────────────

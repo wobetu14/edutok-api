@@ -57,6 +57,46 @@ export async function deleteOrg(req: Request, res: Response, next: NextFunction)
   } catch (e) { next(e); }
 }
 
+// PATCH /api/organizations/:id/active
+export async function setOrgActiveStatus(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { is_active, suspended_reason } = req.body;
+    const data = await service.setOrgActiveStatus(req.params.id, is_active, suspended_reason);
+    ok(res, data, is_active ? 'Organization activated' : 'Organization suspended');
+  } catch (e) { next(e); }
+}
+
+// POST /api/organizations/apply
+export async function applyOrg(req: Request, res: Response, next: NextFunction) {
+  try {
+    const data = await service.applyOrg(req.body);
+    created(res, data, 'Application submitted');
+  } catch (e) { next(e); }
+}
+
+// GET /api/organizations/applications
+export async function listApplications(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { page, limit, status } = req.query as any;
+    const { applications, total } = await service.listApplications({ page, limit, status });
+    paginated(res, applications, total, page, limit);
+  } catch (e) { next(e); }
+}
+
+// PATCH /api/organizations/applications/:appId/review
+export async function reviewApplication(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { action, reject_reason } = req.body;
+    const data = await service.reviewApplication(
+      req.params.appId,
+      action,
+      reject_reason,
+      req.user!.id,
+    );
+    ok(res, data, `Application ${action}`);
+  } catch (e) { next(e); }
+}
+
 // GET /api/organizations/:id/members
 export async function listMembers(req: Request, res: Response, next: NextFunction) {
   try {

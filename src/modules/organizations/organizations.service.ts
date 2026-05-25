@@ -1,4 +1,4 @@
-import { Role, OrgRole, CourseStatus, CourseVisibility } from '@prisma/client';
+import { Role, OrgRole, CourseStatus, CourseVisibility, ApplicationStatus } from '@prisma/client';
 import { prisma } from '../../config/database';
 import { ApiError } from '../../middleware/errorHandler';
 
@@ -49,13 +49,15 @@ export async function listOrgs(query: {
       take:    limit,
       orderBy: { created_at: 'desc' },
       select: {
-        id:          true,
-        name:        true,
-        logo_url:    true,
-        description: true,
-        website:     true,
-        created_at:  true,
-        _count:      { select: { courses: true, members: true } },
+        id:               true,
+        name:             true,
+        logo_url:         true,
+        description:      true,
+        website:          true,
+        is_active:        true,
+        suspended_reason: true,
+        created_at:       true,
+        _count:           { select: { courses: true, members: true } },
       },
     }),
     prisma.organization.count({ where }),
@@ -181,6 +183,86 @@ export async function deleteOrg(orgId: string) {
   await assertOrgExists(orgId);
   // Cascade deletes members and courses (via Prisma schema onDelete)
   await prisma.organization.delete({ where: { id: orgId } });
+}
+
+export async function setOrgActiveStatus(
+  orgId:           string,
+  isActive:        boolean,
+  suspendedReason: string | undefined,
+) {
+  await assertOrgExists(orgId);
+  return prisma.organization.update({
+    where: { id: orgId },
+    data: {
+      is_active:        isActive,
+      suspended_reason: isActive ? null : (suspendedReason ?? null),
+    },
+    select: { id: true, name: true, is_active: true, suspended_reason: true },
+  });
+}
+
+// ── Self-registration (portal) ────────────────────────────────────────────────
+
+export async function applyOrg(data: {
+  org_name:      string;
+  contact_name:  string;
+  contact_email: string;
+  contact_phone?: string;
+  website?:       string;
+  description?:   string;
+}) {
+  return prisma.orgApplication.create({ data });
+}
+
+export async function listApplications(query: {
+  page:    number;
+  limit:   number;
+  status?: ApplicationStatus;
+}) {
+  const { page, limit, status } = query;
+  const skip  = (page - 1) * limit;
+  const where = status ? { status } : {};
+
+  const [applications, total] = await prisma.$transaction([
+    prisma.orgApplication.findMany({
+      where,
+      skip,
+      take:    limit,
+      orderBy: { created_at: 'desc' },
+      include: {
+        reviewer: { select: { id: true, full_name: true, username: true } },
+      },
+    }),
+    prisma.orgApplication.count({ where }),
+  ]);
+
+  return { applications, total };
+}
+
+export async function reviewApplication(
+  applicationId: string,
+  action:        'approved' | 'rejected',
+  rejectReason:  string | undefined,
+  reviewerId:    string,
+) {
+  const app = await prisma.orgApplication.findUnique({ where: { id: applicationId } });
+  if (!app) throw new ApiError(404, 'Application not found');
+  if (app.status !== ApplicationStatus.pending) {
+    throw new ApiError(409, 'Application has already been reviewed');
+  }
+
+  return prisma.orgApplication.update({
+    where: { id: applicationId },
+    data: {
+      status:       action as ApplicationStatus,
+      reviewer_id:  reviewerId,
+      reviewed_at:  new Date(),
+      reject_reason: action === 'rejected' ? rejectReason : null,
+    },
+    include: {
+      reviewer: { select: { id: true, full_name: true, username: true } },
+    },
+  });
 }
 
 // ── Member management ─────────────────────────────────────────────────────────

@@ -15,6 +15,27 @@ router.get('/',
   ctrl.listOrgs,
 );
 
+// POST /apply — public self-registration portal (literal path before /:id)
+router.post('/apply',
+  validate(schema.applyOrgSchema),
+  ctrl.applyOrg,
+);
+
+// Applications management — literal paths before /:id
+router.get('/applications',
+  authenticate,
+  authorize(Role.super_admin),
+  validateQuery(schema.listApplicationsQuerySchema),
+  ctrl.listApplications,
+);
+
+router.patch('/applications/:appId/review',
+  authenticate,
+  authorize(Role.super_admin),
+  validate(schema.reviewApplicationSchema),
+  ctrl.reviewApplication,
+);
+
 router.get('/:id',
   ctrl.getOrg,
 );
@@ -38,6 +59,13 @@ router.patch('/:id',
   authorize(Role.super_admin, Role.org_admin),
   validate(schema.updateOrgSchema),
   ctrl.updateOrg,
+);
+
+router.patch('/:id/active',
+  authenticate,
+  authorize(Role.super_admin),
+  validate(schema.setOrgActiveSchema),
+  ctrl.setOrgActiveStatus,
 );
 
 router.delete('/:id',
