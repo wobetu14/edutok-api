@@ -18,6 +18,7 @@ import notificationsRouter from './modules/notifications/notifications.router';
 import searchRouter from './modules/search/search.router';
 import mediaRouter from './modules/media/media.router';
 import adminRouter from './modules/admin/admin.router';
+import categoriesRouter from './modules/categories/categories.router';
 
 const app = express();
 
@@ -56,6 +57,7 @@ app.use('/api/notifications', notificationsRouter);
 app.use('/api/search', searchRouter);
 app.use('/api/media', mediaRouter);
 app.use('/api/admin', adminRouter);
+app.use('/api/categories', categoriesRouter);
 
 app.use(errorHandler);
 
