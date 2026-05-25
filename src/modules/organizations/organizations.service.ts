@@ -142,7 +142,10 @@ export async function getOrgCourses(orgId: string, query: { page: number; limit:
 
 export async function createOrg(
   userId: string,
-  data: { name: string; description?: string; logo_url?: string; website?: string },
+  data: {
+    name: string; description?: string; logo_url?: string; website?: string;
+    mobile?: string; telephone?: string; email?: string;
+  },
 ) {
   // Run org creation and creator membership in a transaction
   return prisma.$transaction(async (tx) => {
@@ -152,6 +155,9 @@ export async function createOrg(
         description:   data.description,
         logo_url:      data.logo_url,
         website:       data.website,
+        mobile:        data.mobile,
+        telephone:     data.telephone,
+        email:         data.email,
         owner_user_id: userId,
       },
     });
@@ -168,7 +174,10 @@ export async function updateOrg(
   orgId:       string,
   requesterId: string,
   requesterRole: Role,
-  data: { name?: string; description?: string; logo_url?: string; website?: string },
+  data: {
+    name?: string; description?: string; logo_url?: string | null; website?: string | null;
+    mobile?: string | null; telephone?: string | null; email?: string | null;
+  },
 ) {
   await assertOrgExists(orgId);
   await assertOrgAdmin(orgId, requesterId, requesterRole);

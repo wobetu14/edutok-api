@@ -243,6 +243,9 @@ model Organization {
   created_at    DateTime  @default(now())
   updated_at    DateTime  @updatedAt
 
+  mobile           String?
+  telephone        String?
+  email            String?
   is_active        Boolean   @default(true)
   suspended_reason String?
 

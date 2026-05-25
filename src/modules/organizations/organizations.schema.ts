@@ -1,11 +1,20 @@
 import { z } from 'zod';
 import { OrgRole } from '@prisma/client';
 
+const optionalPhone = z
+  .string()
+  .max(30)
+  .regex(/^\+?[\d\s\-()+]{7,30}$/, 'Enter a valid phone number')
+  .optional();
+
 export const createOrgSchema = z.object({
   name:        z.string().min(2).max(100).trim(),
   description: z.string().max(1000).trim().optional(),
   logo_url:    z.string().url().optional(),
   website:     z.string().url().optional(),
+  mobile:      optionalPhone,
+  telephone:   optionalPhone,
+  email:       z.string().email().optional(),
 });
 
 export const updateOrgSchema = z.object({
@@ -13,6 +22,9 @@ export const updateOrgSchema = z.object({
   description: z.string().max(1000).trim().optional(),
   logo_url:    z.string().url().optional().nullable(),
   website:     z.string().url().optional().nullable(),
+  mobile:      optionalPhone.nullable().optional(),
+  telephone:   optionalPhone.nullable().optional(),
+  email:       z.string().email().optional().nullable(),
 });
 
 export const setOrgActiveSchema = z.object({
