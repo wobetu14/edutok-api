@@ -122,7 +122,8 @@ export async function unenrollCourse(req: Request, res: Response, next: NextFunc
 // GET /api/courses/:id/students
 export async function listStudents(req: Request, res: Response, next: NextFunction) {
   try {
-    const { page, limit } = req.query as any;
+    const page  = Number(req.query.page)  || 1;
+    const limit = Number(req.query.limit) || 10;
     const { enrollments, total } = await service.listStudents(
       req.params.id,
       req.user!.id,

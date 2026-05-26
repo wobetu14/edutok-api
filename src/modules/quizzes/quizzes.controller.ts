@@ -5,7 +5,7 @@ import { ok, created, noContent } from '../../utils/response';
 // GET /api/quizzes/lesson/:lessonId
 export async function getQuizByLesson(req: Request, res: Response, next: NextFunction) {
   try {
-    const data = await service.getQuizByLesson(req.params.lessonId, req.user!.id);
+    const data = await service.getQuizByLesson(req.params.lessonId, req.user!.id, req.user!.role as any);
     ok(res, data);
   } catch (e) { next(e); }
 }

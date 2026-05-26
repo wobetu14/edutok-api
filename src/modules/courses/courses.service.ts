@@ -100,8 +100,11 @@ export async function getCourse(courseId: string, requesterId?: string, requeste
   const course = await prisma.course.findUnique({
     where:   { id: courseId },
     include: {
-      organization: { select: { id: true, name: true, logo_url: true } },
-      instructor:   { select: { id: true, full_name: true, username: true, avatar_url: true } },
+      organization:      { select: { id: true, name: true, logo_url: true } },
+      instructor:        { select: { id: true, full_name: true, username: true, avatar_url: true } },
+      course_categories: {
+        include: { category: { select: { id: true, label: true, color: true, icon: true } } },
+      },
       lessons: {
         orderBy: { order_index: 'asc' },
         select: {
@@ -167,8 +170,13 @@ export async function getCourse(courseId: string, requesterId?: string, requeste
     is_enrolled = !!enrollment;
   }
 
-  const { _count, ...rest } = course;
-  return { ...rest, enrolled_count: _count.enrollments, is_enrolled };
+  const { _count, course_categories, ...rest } = course;
+  return {
+    ...rest,
+    enrolled_count: _count.enrollments,
+    is_enrolled,
+    categories: course_categories.map((cc) => cc.category),
+  };
 }
 
 // ── Instructor's own courses (all statuses + visibilities) ───────────────────
@@ -315,7 +323,7 @@ export async function updateCourse(
   userRole:   Role,
   data: {
     title?:         string;
-    category?:      string;
+    category_ids?:  string[];
     description?:   string;
     thumbnail_url?: string;
     tags?:          string[];
@@ -326,7 +334,23 @@ export async function updateCourse(
   const course = await findCourse(courseId);
   await assertEditAccess(course, userId, userRole);
 
-  return prisma.course.update({ where: { id: courseId }, data });
+  const { category_ids, ...rest } = data;
+  const patch: Record<string, any> = { ...rest };
+
+  if (category_ids && category_ids.length > 0) {
+    const firstCat = await prisma.category.findUnique({ where: { id: category_ids[0] } });
+    if (firstCat) patch.category = firstCat.label;
+
+    return prisma.$transaction(async (tx) => {
+      await tx.courseCategory.deleteMany({ where: { course_id: courseId } });
+      await tx.courseCategory.createMany({
+        data: category_ids.map((cid) => ({ course_id: courseId, category_id: cid })),
+      });
+      return tx.course.update({ where: { id: courseId }, data: patch });
+    });
+  }
+
+  return prisma.course.update({ where: { id: courseId }, data: patch });
 }
 
 export async function deleteCourse(courseId: string, userId: string, userRole: Role) {

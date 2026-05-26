@@ -74,9 +74,13 @@ function sanitizeForClient(quiz: any) {
 
 // ── Learner: fetch quiz ───────────────────────────────────────────────────────
 
-export async function getQuizByLesson(lessonId: string, userId: string) {
+export async function getQuizByLesson(lessonId: string, userId: string, userRole?: Role) {
   const quiz = await prisma.quiz.findUnique({ where: { lesson_id: lessonId } });
   if (!quiz) throw new ApiError(404, 'Quiz not found for this lesson');
+
+  // Staff see the full quiz including correct answers (needed for dashboard management)
+  const isStaff = userRole === Role.super_admin || userRole === Role.org_admin || userRole === Role.instructor;
+  if (isStaff) return quiz;
 
   const passed = !!(await prisma.quizPass.findUnique({
     where: { user_id_quiz_id: { user_id: userId, quiz_id: quiz.id } },

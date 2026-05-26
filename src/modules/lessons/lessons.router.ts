@@ -12,7 +12,7 @@ const router = Router();
 
 router.post('/',
   authenticate,
-  authorize(Role.super_admin, Role.org_admin, Role.instructor),
+  authorize(Role.org_admin, Role.instructor),
   validate(schema.createLessonSchema),
   ctrl.createLesson,
 );
@@ -20,21 +20,21 @@ router.post('/',
 // IMPORTANT: /reorder must be declared before /:id to avoid "reorder" matching as a param
 router.patch('/reorder',
   authenticate,
-  authorize(Role.super_admin, Role.org_admin, Role.instructor),
+  authorize(Role.org_admin, Role.instructor),
   validate(schema.reorderSchema),
   ctrl.reorderLessons,
 );
 
 router.patch('/:id',
   authenticate,
-  authorize(Role.super_admin, Role.org_admin, Role.instructor),
+  authorize(Role.org_admin, Role.instructor),
   validate(schema.updateLessonSchema),
   ctrl.updateLesson,
 );
 
 router.delete('/:id',
   authenticate,
-  authorize(Role.super_admin, Role.org_admin, Role.instructor),
+  authorize(Role.org_admin, Role.instructor),
   ctrl.deleteLesson,
 );
 

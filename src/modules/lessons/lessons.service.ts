@@ -22,8 +22,6 @@ async function findLessonWithCourse(lessonId: string): Promise<LessonWithCourse>
 }
 
 async function assertEditAccess(lesson: LessonWithCourse, userId: string, userRole: Role) {
-  if (userRole === Role.super_admin) return;
-
   if (userRole === Role.org_admin) {
     const m = await prisma.orgMember.findUnique({
       where: { user_id_org_id: { user_id: userId, org_id: lesson.course.org_id } },

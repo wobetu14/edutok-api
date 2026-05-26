@@ -12,7 +12,7 @@ const router = Router();
 
 router.post('/',
   authenticate,
-  authorize(Role.super_admin, Role.org_admin, Role.instructor),
+  authorize(Role.org_admin, Role.instructor),
   validate(schema.createQuizSchema),
   ctrl.createQuiz,
 );
@@ -37,14 +37,14 @@ router.post('/:id/submit',
 
 router.patch('/:id',
   authenticate,
-  authorize(Role.super_admin, Role.org_admin, Role.instructor),
+  authorize(Role.org_admin, Role.instructor),
   validate(schema.updateQuizSchema),
   ctrl.updateQuiz,
 );
 
 router.delete('/:id',
   authenticate,
-  authorize(Role.super_admin, Role.org_admin, Role.instructor),
+  authorize(Role.org_admin, Role.instructor),
   ctrl.deleteQuiz,
 );
 

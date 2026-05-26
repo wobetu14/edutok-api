@@ -16,7 +16,7 @@ export const createCourseSchema = z.object({
 
 export const updateCourseSchema = z.object({
   title:         z.string().min(3).max(150).trim().optional(),
-  category:      z.string().min(1).max(50).trim().optional(),
+  category_ids:  z.array(z.string()).min(1).max(10).optional(),
   description:   z.string().max(2000).trim().optional(),
   thumbnail_url: z.string().url().optional(),
   tags:          z.array(z.string().max(50)).max(10).optional(),
