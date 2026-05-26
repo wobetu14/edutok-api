@@ -358,6 +358,15 @@ export async function createManagedUser(
           role:    data.role === Role.org_admin ? OrgRole.org_admin : OrgRole.instructor,
         },
       });
+
+      // org_admin is the owner of the organization — transfer ownership from
+      // the super_admin placeholder set at org-creation time
+      if (data.role === Role.org_admin) {
+        await tx.organization.update({
+          where: { id: data.org_id },
+          data:  { owner_user_id: u.id },
+        });
+      }
     }
 
     return u;
