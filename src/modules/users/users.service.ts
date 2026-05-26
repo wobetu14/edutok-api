@@ -33,6 +33,13 @@ export async function getMe(userId: string) {
       streak:      true,
       badges:      { select: { badge_key: true, earned_at: true } },
       _count:      { select: { followers: true, instructed_courses: true } },
+      org_memberships: {
+        include: {
+          org: {
+            select: { id: true, name: true, logo_url: true, is_active: true },
+          },
+        },
+      },
     },
   });
 
