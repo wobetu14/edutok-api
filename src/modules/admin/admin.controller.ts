@@ -13,7 +13,9 @@ export async function getStats(req: Request, res: Response, next: NextFunction) 
 // GET /api/admin/users
 export async function listUsers(req: Request, res: Response, next: NextFunction) {
   try {
-    const { page, limit, search, role } = req.query as any;
+    const page  = Number(req.query.page)  || 1;
+    const limit = Number(req.query.limit) || 10;
+    const { search, role } = req.query as any;
     const data = await service.listUsers({ page, limit, search, role });
     ok(res, data);
   } catch (e) { next(e); }
@@ -22,7 +24,8 @@ export async function listUsers(req: Request, res: Response, next: NextFunction)
 // GET /api/admin/courses/pending
 export async function listPendingCourses(req: Request, res: Response, next: NextFunction) {
   try {
-    const { page, limit } = req.query as any;
+    const page  = Number(req.query.page)  || 1;
+    const limit = Number(req.query.limit) || 10;
     const data = await service.listPendingCourses(page, limit, req.user!.id, req.user!.role as any);
     ok(res, data);
   } catch (e) { next(e); }
@@ -55,7 +58,9 @@ export async function getOrgStats(req: Request, res: Response, next: NextFunctio
 // GET /api/admin/reports
 export async function listReports(req: Request, res: Response, next: NextFunction) {
   try {
-    const { page, limit, status } = req.query as any;
+    const page   = Number(req.query.page)  || 1;
+    const limit  = Number(req.query.limit) || 10;
+    const { status } = req.query as any;
     const data = await service.listReports({ page, limit, status });
     ok(res, data);
   } catch (e) { next(e); }
@@ -73,7 +78,9 @@ export async function resolveReport(req: Request, res: Response, next: NextFunct
 // GET /api/admin/audit-logs
 export async function listAuditLogs(req: Request, res: Response, next: NextFunction) {
   try {
-    const { page, limit, actor_id, target_type } = req.query as any;
+    const page   = Number(req.query.page)  || 1;
+    const limit  = Number(req.query.limit) || 10;
+    const { actor_id, target_type } = req.query as any;
     const data = await service.listAuditLogs({ page, limit, actor_id, target_type });
     ok(res, data);
   } catch (e) { next(e); }

@@ -5,7 +5,9 @@ import { ok, created, noContent, paginated } from '../../utils/response';
 // GET /api/organizations
 export async function listOrgs(req: Request, res: Response, next: NextFunction) {
   try {
-    const { page, limit, search } = req.query as any;
+    const page   = Number(req.query.page)  || 1;
+    const limit  = Number(req.query.limit) || 10;
+    const { search } = req.query as any;
     const { orgs, total } = await service.listOrgs({ page, limit, search });
     paginated(res, orgs, total, page, limit);
   } catch (e) { next(e); }
@@ -22,7 +24,8 @@ export async function getOrg(req: Request, res: Response, next: NextFunction) {
 // GET /api/organizations/:id/courses
 export async function getOrgCourses(req: Request, res: Response, next: NextFunction) {
   try {
-    const { page, limit } = req.query as any;
+    const page  = Number(req.query.page)  || 1;
+    const limit = Number(req.query.limit) || 10;
     const { courses, total } = await service.getOrgCourses(req.params.id, { page, limit });
     paginated(res, courses, total, page, limit);
   } catch (e) { next(e); }
@@ -77,7 +80,9 @@ export async function applyOrg(req: Request, res: Response, next: NextFunction) 
 // GET /api/organizations/applications
 export async function listApplications(req: Request, res: Response, next: NextFunction) {
   try {
-    const { page, limit, status } = req.query as any;
+    const page   = Number(req.query.page)  || 1;
+    const limit  = Number(req.query.limit) || 10;
+    const { status } = req.query as any;
     const { applications, total } = await service.listApplications({ page, limit, status });
     paginated(res, applications, total, page, limit);
   } catch (e) { next(e); }
