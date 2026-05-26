@@ -24,9 +24,8 @@ async function findCourse(courseId: string): Promise<Course> {
 }
 
 // Throws 403 unless requester can edit this course.
+// Super admins are intentionally excluded — course management belongs to org admins and instructors.
 async function assertEditAccess(course: Course, userId: string, userRole: Role) {
-  if (userRole === Role.super_admin) return;
-
   if (userRole === Role.org_admin) {
     const m = await prisma.orgMember.findUnique({
       where: { user_id_org_id: { user_id: userId, org_id: course.org_id } },
@@ -40,9 +39,8 @@ async function assertEditAccess(course: Course, userId: string, userRole: Role) 
 }
 
 // Throws 403 unless requester can approve/reject this course.
+// Only org admins of the course's organization can approve or reject.
 async function assertApproveAccess(course: Course, userId: string, userRole: Role) {
-  if (userRole === Role.super_admin) return;
-
   const m = await prisma.orgMember.findUnique({
     where: { user_id_org_id: { user_id: userId, org_id: course.org_id } },
   });
@@ -218,18 +216,23 @@ export async function listMyCourses(
       take:    limit,
       orderBy: { updated_at: 'desc' },
       include: {
-        organization: { select: { id: true, name: true, logo_url: true } },
-        _count:       { select: { lessons: true, enrollments: true } },
+        organization:      { select: { id: true, name: true, logo_url: true } },
+        instructor:        { select: { id: true, full_name: true, username: true, avatar_url: true } },
+        course_categories: {
+          include: { category: { select: { id: true, label: true, color: true, icon: true } } },
+        },
+        _count: { select: { lessons: true, enrollments: true } },
       },
     }),
     prisma.course.count({ where }),
   ]);
 
   return {
-    courses: courses.map(({ _count, ...c }) => ({
+    courses: courses.map(({ _count, course_categories, ...c }) => ({
       ...c,
-      lesson_count:   _count.lessons,
-      enrolled_count: _count.enrollments,
+      lesson_count:    _count.lessons,
+      enrolled_count:  _count.enrollments,
+      categories:      course_categories.map((cc) => cc.category),
     })),
     total,
   };
@@ -243,7 +246,7 @@ export async function createCourse(
   data: {
     org_id:        string;
     title:         string;
-    category:      string;
+    category_ids:  string[];
     description?:  string;
     thumbnail_url?: string;
     tags?:         string[];
@@ -255,13 +258,15 @@ export async function createCourse(
   const org = await prisma.organization.findUnique({ where: { id: data.org_id } });
   if (!org) throw new ApiError(404, 'Organization not found');
 
-  // Verify caller is a member of the org (super_admin is exempt)
-  if (userRole !== Role.super_admin) {
-    const callerMembership = await prisma.orgMember.findUnique({
-      where: { user_id_org_id: { user_id: userId, org_id: data.org_id } },
-    });
-    if (!callerMembership) throw new ApiError(403, 'You are not a member of this organization');
-  }
+  // All callers must be a member of the org
+  const callerMembership = await prisma.orgMember.findUnique({
+    where: { user_id_org_id: { user_id: userId, org_id: data.org_id } },
+  });
+  if (!callerMembership) throw new ApiError(403, 'You are not a member of this organization');
+
+  // Resolve the primary category label (for the legacy `category` string field)
+  const firstCat = await prisma.category.findUnique({ where: { id: data.category_ids[0] } });
+  if (!firstCat) throw new ApiError(400, 'Invalid category');
 
   const instructorId = data.instructor_id ?? userId;
 
@@ -283,17 +288,23 @@ export async function createCourse(
       org_id:        data.org_id,
       instructor_id: instructorId,
       title:         data.title,
-      category:      data.category,
+      category:      firstCat.label,
       description:   data.description,
       thumbnail_url: data.thumbnail_url,
       tags:          data.tags ?? [],
       difficulty:    data.difficulty ?? Difficulty.Beginner,
       visibility:    data.visibility ?? CourseVisibility.public,
       status:        CourseStatus.pending,
+      course_categories: {
+        create: data.category_ids.map((cid) => ({ category_id: cid })),
+      },
     },
     include: {
-      organization: { select: { id: true, name: true } },
-      instructor:   { select: { id: true, full_name: true, username: true } },
+      organization:      { select: { id: true, name: true } },
+      instructor:        { select: { id: true, full_name: true, username: true } },
+      course_categories: {
+        include: { category: { select: { id: true, label: true, color: true, icon: true } } },
+      },
     },
   });
 }

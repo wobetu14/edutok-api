@@ -34,21 +34,21 @@ router.get('/:id',
 
 router.post('/',
   authenticate,
-  authorize(Role.super_admin, Role.org_admin, Role.instructor),
+  authorize(Role.org_admin, Role.instructor),
   validate(schema.createCourseSchema),
   ctrl.createCourse,
 );
 
 router.patch('/:id',
   authenticate,
-  authorize(Role.super_admin, Role.org_admin, Role.instructor),
+  authorize(Role.org_admin, Role.instructor),
   validate(schema.updateCourseSchema),
   ctrl.updateCourse,
 );
 
 router.delete('/:id',
   authenticate,
-  authorize(Role.super_admin, Role.org_admin),
+  authorize(Role.org_admin),
   ctrl.deleteCourse,
 );
 
@@ -56,13 +56,13 @@ router.delete('/:id',
 
 router.post('/:id/submit',
   authenticate,
-  authorize(Role.super_admin, Role.org_admin, Role.instructor),
+  authorize(Role.org_admin, Role.instructor),
   ctrl.submitCourse,
 );
 
 router.patch('/:id/approve',
   authenticate,
-  authorize(Role.super_admin, Role.org_admin),
+  authorize(Role.org_admin),
   validate(schema.approveSchema),
   ctrl.approveCourse,
 );

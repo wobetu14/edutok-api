@@ -4,13 +4,13 @@ import { Difficulty, CourseVisibility, CourseStatus } from '@prisma/client';
 export const createCourseSchema = z.object({
   org_id:        z.string().cuid(),
   title:         z.string().min(3).max(150).trim(),
-  category:      z.string().min(1).max(50).trim(),
+  category_ids:  z.array(z.string()).min(1, 'At least one category is required').max(10),
   description:   z.string().max(2000).trim().optional(),
   thumbnail_url: z.string().url().optional(),
   tags:          z.array(z.string().max(50)).max(10).optional(),
   difficulty:    z.nativeEnum(Difficulty).optional(),
   visibility:    z.nativeEnum(CourseVisibility).optional(),
-  // Admins may assign a different instructor; defaults to caller
+  // Org admins may assign a different instructor; defaults to caller
   instructor_id: z.string().cuid().optional(),
 });
 

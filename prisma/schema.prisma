@@ -318,6 +318,7 @@ model Course {
   certificates       Certificate[]
   share_events       ShareEvent[]
   approvals          CourseApproval[]
+  course_categories  CourseCategory[]
 
   @@map("courses")
 }
@@ -656,7 +657,20 @@ model Category {
   icon  String
   color String
 
+  courses CourseCategory[]
+
   @@map("categories")
+}
+
+model CourseCategory {
+  course_id   String
+  category_id String
+
+  course   Course   @relation(fields: [course_id], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [category_id], references: [id], onDelete: Cascade)
+
+  @@id([course_id, category_id])
+  @@map("course_categories")
 }
 
 // ─── Search ───────────────────────────────────────────────────────────────────
