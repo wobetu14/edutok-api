@@ -7,7 +7,11 @@ const textContent    = z.object({ body: z.string().min(1) });
 const imageContent   = z.array(
   z.object({ uri: z.string().url(), caption: z.string().max(300).optional() }),
 ).min(1).max(20);
-const videoContent   = z.object({ youtubeId: z.string().length(11) });
+// Supports YouTube embeds ({ youtubeId }) and direct Cloudinary uploads ({ url })
+const videoContent   = z.union([
+  z.object({ youtubeId: z.string().length(11) }),
+  z.object({ url: z.string().url() }),
+]);
 
 // ── Lesson CRUD ───────────────────────────────────────────────────────────────
 
