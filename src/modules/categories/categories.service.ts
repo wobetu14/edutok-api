@@ -4,9 +4,9 @@ import { ApiError } from '../../middleware/errorHandler';
 export async function listCategories() {
   const [categories, courseCounts] = await Promise.all([
     prisma.category.findMany({ orderBy: { label: 'asc' } }),
-    prisma.course.groupBy({ by: ['category'], _count: { id: true } }),
+    prisma.courseCategory.groupBy({ by: ['category_id'], _count: { course_id: true } }),
   ]);
-  const countMap = new Map(courseCounts.map((c) => [c.category, c._count.id]));
+  const countMap = new Map(courseCounts.map((c) => [c.category_id, c._count.course_id]));
   return categories.map((cat) => ({ ...cat, course_count: countMap.get(cat.id) ?? 0 }));
 }
 
@@ -29,7 +29,7 @@ export async function deleteCategory(id: string) {
   const existing = await prisma.category.findUnique({ where: { id } });
   if (!existing) throw new ApiError(404, 'Category not found');
 
-  const courseCount = await prisma.course.count({ where: { category: id } });
+  const courseCount = await prisma.courseCategory.count({ where: { category_id: id } });
   if (courseCount > 0) {
     throw new ApiError(409, `Cannot delete: ${courseCount} course(s) are using this category. Reassign them first.`);
   }
