@@ -19,6 +19,12 @@ router.post('/',
   ctrl.createCategory,
 );
 
+router.get('/:id/courses',
+  authenticate,
+  authorize(Role.super_admin, Role.org_admin),
+  ctrl.listCategoryCourses,
+);
+
 router.patch('/:id',
   authenticate,
   authorize(Role.super_admin),

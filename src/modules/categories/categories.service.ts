@@ -10,6 +10,34 @@ export async function listCategories() {
   return categories.map((cat) => ({ ...cat, course_count: countMap.get(cat.id) ?? 0 }));
 }
 
+export async function listCategoryCourses(categoryId: string, page: number, limit: number) {
+  const existing = await prisma.category.findUnique({ where: { id: categoryId } });
+  if (!existing) throw new ApiError(404, 'Category not found');
+
+  const skip = (page - 1) * limit;
+
+  const where = { course_categories: { some: { category_id: categoryId } } };
+
+  const [courses, total] = await prisma.$transaction([
+    prisma.course.findMany({
+      where,
+      skip,
+      take: limit,
+      orderBy: { created_at: 'desc' },
+      include: {
+        organization: { select: { id: true, name: true } },
+        _count:       { select: { lessons: true } },
+      },
+    }),
+    prisma.course.count({ where }),
+  ]);
+
+  return {
+    courses: courses.map(({ _count, ...c }) => ({ ...c, lesson_count: _count.lessons })),
+    total,
+  };
+}
+
 export async function createCategory(data: { id: string; label: string; icon: string; color: string }) {
   const existing = await prisma.category.findUnique({ where: { id: data.id } });
   if (existing) throw new ApiError(409, `Category with id '${data.id}' already exists`);
