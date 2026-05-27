@@ -276,7 +276,9 @@ export async function checkFollow(followerId: string, instructorId: string) {
   return { is_following: !!record };
 }
 
-// ── Managed account creation (org_admin creates instructor; super_admin creates org_admin) ──
+// ── Managed account creation ──────────────────────────────────────────────────
+// super_admin → org_admin | instructor | super_admin
+// org_admin   → org_admin | instructor  (org auto-resolved from creator's membership)
 
 export async function createManagedUser(
   creatorId:   string,
@@ -287,23 +289,22 @@ export async function createManagedUser(
     phone:     string;
     email:     string;
     role:      Role;
-    org_id?:   string;   // required when creator is org_admin
+    org_id?:   string;   // required when creator is super_admin and role != super_admin
   },
 ) {
-  // super_admin can create org_admin or instructor; org_admin can only create instructor
   if (creatorRole === Role.org_admin) {
-    if (data.role !== Role.instructor) {
-      throw new ApiError(403, 'Organization admins can only create instructor accounts');
+    if (data.role !== Role.instructor && data.role !== Role.org_admin) {
+      throw new ApiError(403, 'Organization admins can only create org admin or instructor accounts');
     }
-    if (!data.org_id) throw new ApiError(400, 'org_id is required when creating an instructor');
 
-    // Verify creator is an org_admin of that org
-    const membership = await prisma.orgMember.findUnique({
-      where: { user_id_org_id: { user_id: creatorId, org_id: data.org_id } },
+    // Auto-resolve org from the creator's own membership — ignore any client-supplied org_id
+    const membership = await prisma.orgMember.findFirst({
+      where: { user_id: creatorId, role: OrgRole.org_admin },
     });
-    if (!membership || membership.role !== OrgRole.org_admin) {
-      throw new ApiError(403, 'You are not an admin of this organization');
+    if (!membership) {
+      throw new ApiError(403, 'You are not an admin of any organization');
     }
+    data.org_id = membership.org_id;
   } else if (creatorRole === Role.super_admin) {
     if (data.role === Role.learner) {
       throw new ApiError(400, 'Cannot create learner accounts via this endpoint');
@@ -470,13 +471,13 @@ export async function listUsers(query: {
   const conditions: any[] = [];
 
   if (requesterRole === Role.org_admin) {
-    // org_admin sees only instructors belonging to their orgs
+    // org_admin sees instructors and org_admins belonging to their orgs
     const memberships = await prisma.orgMember.findMany({
       where:  { user_id: requesterId, role: OrgRole.org_admin },
       select: { org_id: true },
     });
     const orgIds = memberships.map((m) => m.org_id);
-    conditions.push({ role: Role.instructor });
+    conditions.push({ role: { in: [Role.instructor, Role.org_admin] } });
     conditions.push({ org_memberships: { some: { org_id: { in: orgIds } } } });
   } else {
     // super_admin sees everyone; honour optional role filter
