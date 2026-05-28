@@ -24,18 +24,10 @@ async function findCourse(courseId: string): Promise<Course> {
   return course;
 }
 
-// Throws 403 unless requester can edit this course.
-// Super admins are intentionally excluded — course management belongs to org admins and instructors.
-async function assertEditAccess(course: Course, userId: string, userRole: Role) {
-  if (userRole === Role.org_admin) {
-    const m = await prisma.orgMember.findUnique({
-      where: { user_id_org_id: { user_id: userId, org_id: course.org_id } },
-    });
-    if (m) return;
-  }
-
+// Throws 403 unless the requester is the course's own instructor.
+// Org admins can approve/reject but cannot edit courses they did not create.
+async function assertEditAccess(course: Course, userId: string, _userRole: Role) {
   if (course.instructor_id === userId) return;
-
   throw new ApiError(403, 'You do not have permission to modify this course');
 }
 
@@ -186,23 +178,24 @@ export async function listMyCourses(
   userId:   string,
   userRole: Role,
   query: {
-    page:      number;
-    limit:     number;
-    status?:   CourseStatus;
-    org_id?:   string;
+    page:           number;
+    limit:          number;
+    status?:        CourseStatus;
+    org_id?:        string;
+    instructor_id?: string;  // when provided, restrict to that instructor's courses
   },
 ) {
-  const { page, limit, status, org_id } = query;
+  const { page, limit, status, org_id, instructor_id } = query;
   const skip = (page - 1) * limit;
 
   const where: Record<string, any> = {};
 
   if (userRole === Role.super_admin) {
-    // super_admin can see everything; filters are optional
-    if (status)  where.status  = status;
-    if (org_id)  where.org_id  = org_id;
+    if (status)        where.status        = status;
+    if (org_id)        where.org_id        = org_id;
+    if (instructor_id) where.instructor_id = instructor_id;
   } else if (userRole === Role.org_admin) {
-    // org_admin sees all courses across their orgs
+    // org_admin sees courses across their orgs; optionally scoped to a single instructor
     const memberships = await prisma.orgMember.findMany({
       where:  { user_id: userId, role: OrgRole.org_admin },
       select: { org_id: true },
@@ -210,7 +203,8 @@ export async function listMyCourses(
     const orgIds = memberships.map(m => m.org_id);
     if (orgIds.length === 0) return { courses: [], total: 0 };
     where.org_id = org_id ? { in: orgIds.filter(id => id === org_id) } : { in: orgIds };
-    if (status) where.status = status;
+    if (status)        where.status        = status;
+    if (instructor_id) where.instructor_id = instructor_id;
   } else {
     // instructor only sees their own courses
     where.instructor_id = userId;
