@@ -302,7 +302,7 @@ export async function createCourse(
       tags:          data.tags ?? [],
       difficulty:    data.difficulty ?? Difficulty.Beginner,
       visibility:    data.visibility ?? CourseVisibility.public,
-      status:        CourseStatus.pending,
+      status:        CourseStatus.draft,
       course_categories: {
         create: data.category_ids.map((cid) => ({ category_id: cid })),
       },
@@ -380,7 +380,7 @@ export async function submitCourse(courseId: string, userId: string, userRole: R
     }
   }
 
-  if (course.status === CourseStatus.pending) {
+  if (course.status !== CourseStatus.draft && course.status !== CourseStatus.rejected) {
     throw new ApiError(409, 'Course is already submitted and awaiting review');
   }
 

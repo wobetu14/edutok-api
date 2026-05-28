@@ -28,6 +28,7 @@ enum OrgRole {
 }
 
 enum CourseStatus {
+  draft
   pending
   approved
   rejected
