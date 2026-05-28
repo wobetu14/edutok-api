@@ -12,6 +12,7 @@ type Course = {
   org_id: string;
   instructor_id: string;
   status: CourseStatus;
+  title: string;
 };
 
 // ── Access guards ─────────────────────────────────────────────────────────────
@@ -334,23 +335,56 @@ export async function updateCourse(
   const course = await findCourse(courseId);
   await assertEditAccess(course, userId, userRole);
 
+  const wasApproved = course.status === CourseStatus.approved;
   const { category_ids, ...rest } = data;
   const patch: Record<string, any> = { ...rest };
+  if (wasApproved) patch.status = CourseStatus.pending;
 
+  // Resolve category label before transaction
   if (category_ids && category_ids.length > 0) {
     const firstCat = await prisma.category.findUnique({ where: { id: category_ids[0] } });
     if (firstCat) patch.category = firstCat.label;
+  }
 
-    return prisma.$transaction(async (tx) => {
+  const updated = await prisma.$transaction(async (tx) => {
+    if (category_ids && category_ids.length > 0) {
       await tx.courseCategory.deleteMany({ where: { course_id: courseId } });
       await tx.courseCategory.createMany({
         data: category_ids.map((cid) => ({ course_id: courseId, category_id: cid })),
       });
-      return tx.course.update({ where: { id: courseId }, data: patch });
-    });
+    }
+    if (wasApproved) {
+      await tx.courseApproval.create({
+        data: {
+          course_id:    courseId,
+          submitted_by: userId,
+          submitted_at: new Date(),
+          status:       CourseStatus.pending,
+        },
+      });
+    }
+    return tx.course.update({ where: { id: courseId }, data: patch });
+  });
+
+  // Fire-and-forget: notify org admins that a published course was re-submitted
+  if (wasApproved) {
+    prisma.orgMember.findMany({
+      where:  { org_id: course.org_id, role: OrgRole.org_admin },
+      select: { user_id: true },
+    }).then((admins) => {
+      for (const { user_id } of admins) {
+        sendPush(
+          user_id,
+          NotificationType.course_updated,
+          'Course Updated',
+          `"${course.title}" was edited after approval and needs re-review.`,
+          { courseId },
+        ).catch(() => {});
+      }
+    }).catch(() => {});
   }
 
-  return prisma.course.update({ where: { id: courseId }, data: patch });
+  return updated;
 }
 
 export async function deleteCourse(courseId: string, userId: string, userRole: Role) {

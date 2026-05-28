@@ -71,6 +71,7 @@ enum NotificationType {
   enrollment
   daily_reminder
   badge_earned
+  course_updated
 }
 
 enum DevicePlatform {
