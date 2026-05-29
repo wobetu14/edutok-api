@@ -23,6 +23,24 @@ const imageMatchingQuestions = z.array(
   }),
 ).min(1).max(5);
 
+const sortZoneQuestions = z.array(
+  z.object({
+    question:    z.string().min(1).max(500),
+    imageUri:    z.string().url(),
+    leftLabel:   z.string().min(1).max(100),
+    rightLabel:  z.string().min(1).max(100),
+    correctZone: z.enum(['left', 'right']),
+  }),
+).min(1).max(20);
+
+const textMatchingQuestions = z.array(
+  z.object({
+    pairs: z.array(
+      z.object({ left: z.string().min(1), right: z.string().min(1) }),
+    ).min(2).max(10),
+  }),
+).min(1).max(20);
+
 // ── Quiz CRUD ─────────────────────────────────────────────────────────────────
 
 export const createQuizSchema = z.discriminatedUnion('type', [
@@ -40,6 +58,16 @@ export const createQuizSchema = z.discriminatedUnion('type', [
     lesson_id:     z.string().cuid(),
     type:          z.literal(QuizType.imageMatching),
     questions_json: imageMatchingQuestions,
+  }),
+  z.object({
+    lesson_id:     z.string().cuid(),
+    type:          z.literal(QuizType.sortZone),
+    questions_json: sortZoneQuestions,
+  }),
+  z.object({
+    lesson_id:     z.string().cuid(),
+    type:          z.literal(QuizType.textMatching),
+    questions_json: textMatchingQuestions,
   }),
 ]);
 
