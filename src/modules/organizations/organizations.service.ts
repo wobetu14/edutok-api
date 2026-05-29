@@ -404,3 +404,97 @@ export async function removeMember(
     where: { user_id_org_id: { user_id: targetUserId, org_id: orgId } },
   });
 }
+
+// ── Engagement aggregation ─────────────────────────────────────────────────────
+
+export async function getOrgEngagement(orgId: string, userId: string, userRole: Role) {
+  await assertOrgAdmin(orgId, userId, userRole);
+
+  const courses = await prisma.course.findMany({
+    where:  { org_id: orgId },
+    select: { id: true, title: true, status: true, thumbnail_url: true },
+    orderBy: { created_at: 'asc' },
+  });
+
+  const courseIds = courses.map(c => c.id);
+
+  if (courseIds.length === 0) {
+    return {
+      totals:  { likes: 0, saves: 0, comments: 0, replies: 0, shares: 0 },
+      courses: [],
+      lessons: [],
+    };
+  }
+
+  // Fetch all lessons across org courses with reply count via _count filter
+  const rawLessons = await prisma.lesson.findMany({
+    where:  { course_id: { in: courseIds } },
+    select: {
+      id:             true,
+      course_id:      true,
+      title:          true,
+      type:           true,
+      order_index:    true,
+      likes_count:    true,
+      saves_count:    true,
+      comments_count: true,
+      shares_count:   true,
+      _count: { select: { comments: { where: { depth: 1 } } } },
+    },
+    orderBy: [{ course_id: 'asc' }, { order_index: 'asc' }],
+  });
+
+  // Map lessons to structured engagement objects
+  const lessons = rawLessons.map((l: any) => {
+    const replies = l._count?.comments ?? 0;
+    return {
+      id:            l.id,
+      course_id:     l.course_id,
+      title:         l.title,
+      type:          l.type,
+      order_index:   l.order_index,
+      likes_count:   l.likes_count,
+      saves_count:   l.saves_count,
+      comments:      Math.max(0, l.comments_count - replies),
+      replies_count: replies,
+      shares_count:  l.shares_count,
+    };
+  });
+
+  // Aggregate engagement per course
+  const courseEngMap: Record<string, { likes: number; saves: number; comments: number; replies: number; shares: number }> = {};
+  for (const l of lessons) {
+    if (!courseEngMap[l.course_id]) {
+      courseEngMap[l.course_id] = { likes: 0, saves: 0, comments: 0, replies: 0, shares: 0 };
+    }
+    courseEngMap[l.course_id].likes    += l.likes_count;
+    courseEngMap[l.course_id].saves    += l.saves_count;
+    courseEngMap[l.course_id].comments += l.comments;
+    courseEngMap[l.course_id].replies  += l.replies_count;
+    courseEngMap[l.course_id].shares   += l.shares_count;
+  }
+
+  const ZERO = { likes: 0, saves: 0, comments: 0, replies: 0, shares: 0 };
+
+  const coursesWithEng = courses.map(c => ({
+    id:           c.id,
+    title:        c.title,
+    status:       c.status,
+    thumbnail_url: c.thumbnail_url,
+    lesson_count: lessons.filter(l => l.course_id === c.id).length,
+    engagement:   courseEngMap[c.id] ?? ZERO,
+  }));
+
+  const totals = Object.values(courseEngMap).reduce(
+    (acc, e) => ({
+      likes:    acc.likes    + e.likes,
+      saves:    acc.saves    + e.saves,
+      comments: acc.comments + e.comments,
+      replies:  acc.replies  + e.replies,
+      shares:   acc.shares   + e.shares,
+    }),
+    ZERO,
+  );
+
+  return { totals, courses: coursesWithEng, lessons };
+}

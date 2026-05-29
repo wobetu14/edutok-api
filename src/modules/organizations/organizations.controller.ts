@@ -149,3 +149,15 @@ export async function removeMember(req: Request, res: Response, next: NextFuncti
     noContent(res);
   } catch (e) { next(e); }
 }
+
+// GET /api/organizations/:id/engagement
+export async function getOrgEngagement(req: Request, res: Response, next: NextFunction) {
+  try {
+    const data = await service.getOrgEngagement(
+      req.params.id,
+      req.user!.id,
+      req.user!.role as any,
+    );
+    ok(res, data);
+  } catch (e) { next(e); }
+}

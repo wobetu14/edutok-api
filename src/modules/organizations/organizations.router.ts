@@ -74,6 +74,14 @@ router.delete('/:id',
   ctrl.deleteOrg,
 );
 
+// ── Engagement ────────────────────────────────────────────────────────────────
+
+router.get('/:id/engagement',
+  authenticate,
+  authorize(Role.super_admin, Role.org_admin),
+  ctrl.getOrgEngagement,
+);
+
 // ── Member management ─────────────────────────────────────────────────────────
 
 router.get('/:id/members',

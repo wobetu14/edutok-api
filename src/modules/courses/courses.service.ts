@@ -241,12 +241,45 @@ export async function listMyCourses(
     prisma.course.count({ where }),
   ]);
 
+  // Aggregate lesson-level engagement per course in one extra query
+  const courseIds = courses.map(c => c.id);
+  const engagementByCourse: Record<string, { likes: number; saves: number; comments: number; replies: number; shares: number }> = {};
+
+  if (courseIds.length > 0) {
+    const lessonStats = await prisma.lesson.findMany({
+      where:  { course_id: { in: courseIds } },
+      select: {
+        course_id:      true,
+        likes_count:    true,
+        saves_count:    true,
+        comments_count: true,
+        shares_count:   true,
+        _count: { select: { comments: { where: { depth: 1 } } } },
+      },
+    });
+
+    for (const l of lessonStats) {
+      const replies = (l._count as any)?.comments ?? 0;
+      if (!engagementByCourse[l.course_id]) {
+        engagementByCourse[l.course_id] = { likes: 0, saves: 0, comments: 0, replies: 0, shares: 0 };
+      }
+      engagementByCourse[l.course_id].likes    += l.likes_count;
+      engagementByCourse[l.course_id].saves    += l.saves_count;
+      engagementByCourse[l.course_id].comments += Math.max(0, l.comments_count - replies);
+      engagementByCourse[l.course_id].replies  += replies;
+      engagementByCourse[l.course_id].shares   += l.shares_count;
+    }
+  }
+
+  const ZERO_ENG = { likes: 0, saves: 0, comments: 0, replies: 0, shares: 0 };
+
   return {
     courses: courses.map(({ _count, course_categories, ...c }) => ({
       ...c,
       lesson_count:    _count.lessons,
       enrolled_count:  _count.enrollments,
       categories:      course_categories.map((cc) => cc.category),
+      engagement:      engagementByCourse[c.id] ?? ZERO_ENG,
     })),
     total,
   };
