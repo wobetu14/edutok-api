@@ -17,6 +17,14 @@ function optionalUserId(req: Request): string | undefined {
   return optionalAuth(req).id;
 }
 
+// GET /api/courses/dashboard  (instructor)
+export async function getInstructorDashboard(req: Request, res: Response, next: NextFunction) {
+  try {
+    const data = await service.getInstructorDashboard(req.user!.id);
+    ok(res, data);
+  } catch (e) { next(e); }
+}
+
 // GET /api/courses/mine  (instructor/org_admin/super_admin — all statuses & visibilities)
 export async function listMyCourses(req: Request, res: Response, next: NextFunction) {
   try {

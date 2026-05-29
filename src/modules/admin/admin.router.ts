@@ -19,6 +19,14 @@ router.get('/stats',
   ctrl.getStats,
 );
 
+// ── Org admin dashboard ───────────────────────────────────────────────────────
+
+router.get('/org-dashboard',
+  authenticate,
+  authorize(Role.org_admin),
+  ctrl.getOrgDashboard,
+);
+
 // ── Org-scoped stats (org_admin + super_admin) ────────────────────────────────
 
 router.get('/org-stats',

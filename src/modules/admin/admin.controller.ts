@@ -46,6 +46,14 @@ export async function reviewCourse(req: Request, res: Response, next: NextFuncti
   } catch (e) { next(e); }
 }
 
+// GET /api/admin/org-dashboard
+export async function getOrgDashboard(req: Request, res: Response, next: NextFunction) {
+  try {
+    const data = await service.getOrgDashboard(req.user!.id);
+    ok(res, data);
+  } catch (e) { next(e); }
+}
+
 // GET /api/admin/org-stats
 export async function getOrgStats(req: Request, res: Response, next: NextFunction) {
   try {

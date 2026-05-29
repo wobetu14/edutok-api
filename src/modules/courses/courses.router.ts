@@ -15,6 +15,14 @@ router.get('/',
   ctrl.listCourses,
 );
 
+// ── Instructor dashboard — literal path before /:id ───────────────────────────
+
+router.get('/dashboard',
+  authenticate,
+  authorize(Role.instructor),
+  ctrl.getInstructorDashboard,
+);
+
 // ── Staff: own-course management view (all statuses + visibilities) ───────────
 // Must be declared before /:id so "mine" doesn't match as a course ID param
 

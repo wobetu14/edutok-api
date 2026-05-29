@@ -25,41 +25,187 @@ export async function logAudit(
   });
 }
 
+// ── Shared helper ─────────────────────────────────────────────────────────────
+
+function buildEnrollmentTrend(dates: Date[]): { date: string; count: number }[] {
+  const abbr = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const result: { date: string; count: number }[] = [];
+  for (let i = 6; i >= 0; i--) {
+    const day = new Date();
+    day.setDate(day.getDate() - i);
+    day.setHours(0, 0, 0, 0);
+    const next = new Date(day);
+    next.setDate(next.getDate() + 1);
+    const count = dates.filter((d) => d >= day && d < next).length;
+    result.push({ date: i === 0 ? 'Today' : abbr[day.getDay()], count });
+  }
+  return result;
+}
+
 // ── Stats ─────────────────────────────────────────────────────────────────────
 
 export async function getPlatformStats() {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
+  const sevenDaysAgo = new Date();
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
   const [
-    total_users,
+    total_students,
+    total_staff,
     total_orgs,
     total_courses,
     total_lessons,
     total_enrollments,
+    total_completions,
     active_today,
     pending_courses,
     open_reports,
+    recentEnrollments,
+    trendRaw,
+    coursesByCategory,
+    coursesByStatus,
   ] = await Promise.all([
-    prisma.user.count(),
+    prisma.user.count({ where: { role: Role.learner } }),
+    prisma.user.count({ where: { role: { not: Role.learner } } }),
     prisma.organization.count(),
     prisma.course.count(),
     prisma.lesson.count(),
     prisma.enrollment.count(),
+    prisma.lessonCompletion.count(),
     prisma.streak.count({ where: { last_active_date: { gte: today } } }),
     prisma.course.count({ where: { status: CourseStatus.pending } }),
     prisma.contentReport.count({ where: { status: ReportStatus.open } }),
+    prisma.enrollment.findMany({
+      orderBy: { enrolled_at: 'desc' },
+      take: 10,
+      include: {
+        user:   { select: { id: true, full_name: true, username: true, avatar_url: true } },
+        course: { select: { id: true, title: true } },
+      },
+    }),
+    prisma.enrollment.findMany({
+      where:  { enrolled_at: { gte: sevenDaysAgo } },
+      select: { enrolled_at: true },
+    }),
+    prisma.course.groupBy({
+      by:      ['category'],
+      _count:  { id: true },
+      where:   { status: CourseStatus.approved },
+      orderBy: { _count: { id: 'desc' } },
+    }),
+    prisma.course.groupBy({
+      by:    ['status'],
+      _count: { id: true },
+    }),
   ]);
 
+  const statusMap: Record<string, number> = {};
+  for (const row of coursesByStatus) statusMap[row.status] = row._count.id;
+
   return {
-    total_users,
+    total_students,
+    total_staff,
+    total_users:       total_students + total_staff,
     total_orgs,
     total_courses,
     total_lessons,
     total_enrollments,
+    total_completions,
     active_today,
     pending_courses,
     open_reports,
+    recent_enrollments: recentEnrollments,
+    enrollment_trend:   buildEnrollmentTrend(trendRaw.map((e) => e.enrolled_at)),
+    courses_by_category: coursesByCategory.map((c) => ({ category: c.category || 'Uncategorized', count: c._count.id })),
+    courses_by_status: {
+      draft:    statusMap['draft']    ?? 0,
+      pending:  statusMap['pending']  ?? 0,
+      approved: statusMap['approved'] ?? 0,
+      rejected: statusMap['rejected'] ?? 0,
+    },
+  };
+}
+
+// ── Org Admin dashboard ───────────────────────────────────────────────────────
+
+export async function getOrgDashboard(userId: string) {
+  const memberships = await prisma.orgMember.findUnique
+    ? await prisma.orgMember.findMany({
+        where:  { user_id: userId, role: OrgRole.org_admin },
+        select: { org_id: true },
+      })
+    : [];
+
+  const orgIds = (memberships as any[]).map((m: any) => m.org_id);
+
+  if (orgIds.length === 0) {
+    return {
+      members: 0, students: 0,
+      courses_total: 0,
+      courses_by_status: { draft: 0, pending: 0, approved: 0, rejected: 0 },
+      enrollments: 0, completions: 0,
+      recent_enrollments: [], enrollment_trend: [],
+    };
+  }
+
+  const sevenDaysAgo = new Date();
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+  const courses = await prisma.course.findMany({
+    where:  { org_id: { in: orgIds } },
+    select: { id: true, status: true },
+  });
+  const courseIds = courses.map((c) => c.id);
+
+  const [
+    members,
+    totalEnrollments,
+    totalCompletions,
+    studentGroups,
+    recentEnrollments,
+    trendRaw,
+  ] = await Promise.all([
+    prisma.orgMember.count({ where: { org_id: { in: orgIds } } }),
+    courseIds.length ? prisma.enrollment.count({ where: { course_id: { in: courseIds } } }) : Promise.resolve(0),
+    courseIds.length ? prisma.lessonCompletion.count({ where: { course_id: { in: courseIds } } }) : Promise.resolve(0),
+    courseIds.length
+      ? prisma.enrollment.groupBy({ by: ['user_id'], where: { course_id: { in: courseIds } } })
+      : Promise.resolve([]),
+    courseIds.length
+      ? prisma.enrollment.findMany({
+          where:   { course_id: { in: courseIds } },
+          orderBy: { enrolled_at: 'desc' },
+          take:    10,
+          include: {
+            user:   { select: { id: true, full_name: true, username: true, avatar_url: true } },
+            course: { select: { id: true, title: true, thumbnail_url: true } },
+          },
+        })
+      : Promise.resolve([]),
+    courseIds.length
+      ? prisma.enrollment.findMany({
+          where:  { course_id: { in: courseIds }, enrolled_at: { gte: sevenDaysAgo } },
+          select: { enrolled_at: true },
+        })
+      : Promise.resolve([]),
+  ]);
+
+  const cs = courses;
+  return {
+    members,
+    students:      (studentGroups as any[]).length,
+    courses_total: cs.length,
+    courses_by_status: {
+      draft:    cs.filter((c) => c.status === 'draft').length,
+      pending:  cs.filter((c) => c.status === 'pending').length,
+      approved: cs.filter((c) => c.status === 'approved').length,
+      rejected: cs.filter((c) => c.status === 'rejected').length,
+    },
+    enrollments:        totalEnrollments,
+    completions:        totalCompletions,
+    recent_enrollments: recentEnrollments,
+    enrollment_trend:   buildEnrollmentTrend((trendRaw as any[]).map((e: any) => e.enrolled_at)),
   };
 }
 

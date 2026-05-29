@@ -285,6 +285,135 @@ export async function listMyCourses(
   };
 }
 
+// ── Instructor dashboard ──────────────────────────────────────────────────────
+
+export async function getInstructorDashboard(userId: string) {
+  const courses = await prisma.course.findMany({
+    where:  { instructor_id: userId },
+    select: { id: true, title: true, status: true, thumbnail_url: true, _count: { select: { lessons: true, enrollments: true } } },
+    orderBy: { created_at: 'asc' },
+  });
+
+  const courseIds = courses.map((c) => c.id);
+  const sevenDaysAgo = new Date();
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+  const ZERO_ENG = { likes: 0, saves: 0, comments: 0, replies: 0, shares: 0 };
+
+  if (courseIds.length === 0) {
+    return {
+      courses_by_status: { draft: 0, pending: 0, approved: 0, rejected: 0 },
+      courses_total: 0, students: 0, lessons_total: 0,
+      completions: 0, engagement: ZERO_ENG,
+      recent_enrollments: [], enrollment_trend: [],
+      course_breakdown: [],
+    };
+  }
+
+  const [
+    studentGroups,
+    totalCompletions,
+    completionsByCourse,
+    lessonStats,
+    recentEnrollments,
+    trendRaw,
+  ] = await Promise.all([
+    prisma.enrollment.groupBy({ by: ['user_id'], where: { course_id: { in: courseIds } } }),
+    prisma.lessonCompletion.count({ where: { course_id: { in: courseIds } } }),
+    prisma.lessonCompletion.groupBy({ by: ['course_id'], where: { course_id: { in: courseIds } }, _count: { id: true } }),
+    prisma.lesson.findMany({
+      where:  { course_id: { in: courseIds } },
+      select: {
+        course_id: true,
+        likes_count: true, saves_count: true, comments_count: true, shares_count: true,
+        _count: { select: { comments: { where: { depth: 1 } } } },
+      },
+    }),
+    prisma.enrollment.findMany({
+      where:   { course_id: { in: courseIds } },
+      orderBy: { enrolled_at: 'desc' },
+      take:    10,
+      include: {
+        user:   { select: { id: true, full_name: true, username: true, avatar_url: true } },
+        course: { select: { id: true, title: true, thumbnail_url: true } },
+      },
+    }),
+    prisma.enrollment.findMany({
+      where:  { course_id: { in: courseIds }, enrolled_at: { gte: sevenDaysAgo } },
+      select: { enrolled_at: true },
+    }),
+  ]);
+
+  const compMap = Object.fromEntries(completionsByCourse.map((c) => [c.course_id, c._count.id]));
+
+  // Engagement per course + totals
+  const engByCourse: Record<string, typeof ZERO_ENG> = {};
+  let totalLikes = 0, totalSaves = 0, totalComments = 0, totalReplies = 0, totalShares = 0;
+  let totalLessons = 0;
+
+  for (const l of lessonStats) {
+    const replies  = (l._count as any)?.comments ?? 0;
+    const comments = Math.max(0, l.comments_count - replies);
+    if (!engByCourse[l.course_id]) engByCourse[l.course_id] = { ...ZERO_ENG };
+    engByCourse[l.course_id].likes    += l.likes_count;
+    engByCourse[l.course_id].saves    += l.saves_count;
+    engByCourse[l.course_id].comments += comments;
+    engByCourse[l.course_id].replies  += replies;
+    engByCourse[l.course_id].shares   += l.shares_count;
+    totalLikes    += l.likes_count;
+    totalSaves    += l.saves_count;
+    totalComments += comments;
+    totalReplies  += replies;
+    totalShares   += l.shares_count;
+    totalLessons++;
+  }
+
+  // Enrollment trend helper (inline)
+  const trendAbbr = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const enrollmentTrend = Array.from({ length: 7 }, (_, i) => {
+    const day  = new Date();
+    day.setDate(day.getDate() - (6 - i));
+    day.setHours(0, 0, 0, 0);
+    const next = new Date(day);
+    next.setDate(next.getDate() + 1);
+    return {
+      date:  i === 6 ? 'Today' : trendAbbr[day.getDay()],
+      count: trendRaw.filter((e) => e.enrolled_at >= day && e.enrolled_at < next).length,
+    };
+  });
+
+  const courseBreakdown = courses.map((c) => {
+    const enrollments    = c._count.enrollments;
+    const lessons        = c._count.lessons;
+    const completions    = compMap[c.id] ?? 0;
+    const completionRate = enrollments > 0 && lessons > 0
+      ? Math.round((completions / (enrollments * lessons)) * 100)
+      : 0;
+    return {
+      id: c.id, title: c.title, status: c.status, thumbnail_url: c.thumbnail_url,
+      lesson_count: lessons, enrollments, completions, completion_rate: completionRate,
+      engagement: engByCourse[c.id] ?? { ...ZERO_ENG },
+    };
+  });
+
+  return {
+    courses_total: courses.length,
+    courses_by_status: {
+      draft:    courses.filter((c) => c.status === 'draft').length,
+      pending:  courses.filter((c) => c.status === 'pending').length,
+      approved: courses.filter((c) => c.status === 'approved').length,
+      rejected: courses.filter((c) => c.status === 'rejected').length,
+    },
+    students:      (studentGroups as any[]).length,
+    lessons_total: totalLessons,
+    completions:   totalCompletions,
+    engagement: { likes: totalLikes, saves: totalSaves, comments: totalComments, replies: totalReplies, shares: totalShares },
+    recent_enrollments: recentEnrollments,
+    enrollment_trend:   enrollmentTrend,
+    course_breakdown:   courseBreakdown,
+  };
+}
+
 // ── Course CRUD ───────────────────────────────────────────────────────────────
 
 export async function createCourse(
