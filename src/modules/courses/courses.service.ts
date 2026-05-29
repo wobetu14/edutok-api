@@ -112,6 +112,11 @@ export async function getCourse(courseId: string, requesterId?: string, requeste
           saves_count:    true,
           comments_count: true,
           shares_count:   true,
+          _count: {
+            select: {
+              comments: { where: { depth: 1 } },
+            },
+          },
         },
       },
       _count: { select: { enrollments: true } },
@@ -164,8 +169,14 @@ export async function getCourse(courseId: string, requesterId?: string, requeste
   }
 
   const { _count, course_categories, ...rest } = course;
+  const lessons = (rest.lessons as any[]).map((l: any) => {
+    const { _count: lc, ...lesson } = l;
+    return { ...lesson, replies_count: lc?.comments ?? 0 };
+  });
+
   return {
     ...rest,
+    lessons,
     enrolled_count: _count.enrollments,
     is_enrolled,
     categories: course_categories.map((cc) => cc.category),
