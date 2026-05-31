@@ -1,0 +1,62 @@
+name: Deploy API to EC2
+
+on:
+  push:
+    branches: [master]
+
+jobs:
+  deploy:
+    name: Build & Deploy
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type-check
+        run: npx tsc --noEmit
+
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            set -e
+
+            APP_DIR=/var/www/edutok-api
+
+            echo "==> Pulling latest code"
+            cd $APP_DIR
+            git pull origin master
+
+            echo "==> Installing production dependencies"
+            npm ci --omit=dev
+
+            echo "==> Installing dev deps needed for build"
+            npm install --include=dev
+
+            echo "==> Compiling TypeScript"
+            npm run build
+
+            echo "==> Running database migrations"
+            npx prisma migrate deploy
+
+            echo "==> Generating Prisma client"
+            npx prisma generate
+
+            echo "==> Restarting API via PM2"
+            pm2 restart edutok-api || pm2 start dist/server.js --name edutok-api
+
+            echo "==> Deploy complete"
+            pm2 status edutok-api
