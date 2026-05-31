@@ -22,6 +22,7 @@ import categoriesRouter from './modules/categories/categories.router';
 
 const app = express();
 
+app.set('trust proxy', 1); // trust first proxy (nginx)
 app.use(helmet());
 const allowedOrigins = env.CLIENT_URL.split(',').map(o => o.trim());
 app.use(cors({
