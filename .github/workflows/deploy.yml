@@ -56,7 +56,7 @@ jobs:
             npx prisma generate
 
             echo "==> Restarting API via PM2"
-            pm2 restart edutok-api || pm2 start dist/server.js --name edutok-api
+            pm2 restart edutok-api --update-env || pm2 start dist/server.js --name edutok-api
 
             echo "==> Deploy complete"
             pm2 status edutok-api
