@@ -102,12 +102,17 @@ export async function getCourse(courseId: string, requesterId?: string, requeste
         orderBy: { order_index: 'asc' },
         select: {
           id:             true,
+          course_id:      true,
           title:          true,
           type:           true,
+          content_json:   true,
           order_index:    true,
           duration_secs:  true,
           thumbnail_url:  true,
           has_quiz:       true,
+          quiz: {
+            select: { id: true, type: true, questions_json: true },
+          },
           likes_count:    true,
           saves_count:    true,
           comments_count: true,
