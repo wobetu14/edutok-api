@@ -5,7 +5,7 @@ import { checkQuizBadges } from '../../utils/gamification';
 import { findLessonCourseContext, assertLessonEditAccess } from '../lessons/lessons.service';
 import { sendPush } from '../notifications/notifications.service';
 
-const PASS_THRESHOLD = 0.7; // 70 % correct required to pass
+const PASS_THRESHOLD = 1.0; // all questions must be answered correctly to pass
 
 // ── Grading ───────────────────────────────────────────────────────────────────
 

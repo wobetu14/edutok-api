@@ -9,7 +9,7 @@ import {
   generateOtp,
   generateSecureToken,
 } from '../../utils/hash';
-import { signAccessToken, signRefreshToken, verifyRefreshToken } from '../../utils/jwt';
+import { signAccessToken } from '../../utils/jwt';
 import { ApiError } from '../../middleware/errorHandler';
 import { sendSms } from '../../services/sms.service';
 import {
@@ -24,7 +24,10 @@ import {
 const OTP_TTL_MS           = 10 * 60 * 1000;   // 10 min
 const OTP_MAX_ATTEMPTS     = 3;
 const RESET_TOKEN_TTL_MS   = 30 * 60 * 1000;   // 30 min
+// Staff (dashboard) sessions expire after 7 days of inactivity.
 const REFRESH_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+// Learners (mobile app) stay signed in until they explicitly log out.
+const LEARNER_REFRESH_TOKEN_TTL_MS = 100 * 365 * 24 * 60 * 60 * 1000; // ~100 years
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
@@ -33,11 +36,13 @@ async function issueTokens(userId: string, role: string, username: string) {
   const rawRefresh   = generateSecureToken(32);
   const tokenHash    = hashToken(rawRefresh);
 
+  const ttl = role === Role.learner ? LEARNER_REFRESH_TOKEN_TTL_MS : REFRESH_TOKEN_TTL_MS;
+
   await prisma.refreshToken.create({
     data: {
       user_id:    userId,
       token_hash: tokenHash,
-      expires_at: new Date(Date.now() + REFRESH_TOKEN_TTL_MS),
+      expires_at: new Date(Date.now() + ttl),
     },
   });
 
@@ -156,9 +161,9 @@ export async function login(username: string, password: string) {
 // ── Refresh tokens ────────────────────────────────────────────────────────────
 
 export async function refreshTokens(rawToken: string) {
-  const payload = verifyRefreshToken(rawToken);
-  if (!payload) throw new ApiError(401, 'Invalid refresh token');
-
+  // Refresh tokens are opaque random strings stored hashed in the DB — the
+  // lookup below is the verification (do NOT jwt.verify them; they are not
+  // JWTs, and doing so rejected every refresh and killed sessions early).
   const tokenHash = hashToken(rawToken);
   const stored    = await prisma.refreshToken.findUnique({ where: { token_hash: tokenHash } });
 
@@ -173,6 +178,11 @@ export async function refreshTokens(rawToken: string) {
   });
 
   const user = await prisma.user.findUniqueOrThrow({ where: { id: stored.user_id } });
+  // Learner sessions are long-lived — make sure a deactivated account can
+  // never rotate its way back in, even if a revocation was missed
+  if (!user.is_active) {
+    throw new ApiError(403, 'Account is deactivated. Contact your organization administrator.');
+  }
   return issueTokens(user.id, user.role, user.username);
 }
 
