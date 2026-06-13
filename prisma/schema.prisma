@@ -127,6 +127,9 @@ model User {
   avatar_url            String?
   bio                   String?     @db.Text
   expertise             Json        @default("[]")
+  // Learner demographics (set from the mobile profile dialog, optional)
+  age_range             String?
+  gender                String?
   is_active             Boolean     @default(true)
   must_change_password  Boolean     @default(false)
   is_phone_verified     Boolean     @default(false)

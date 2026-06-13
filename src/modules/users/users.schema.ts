@@ -3,6 +3,7 @@ import { Role, FontScale } from '@prisma/client';
 
 export const updateMeSchema = z.object({
   full_name:  z.string().min(2).max(100).trim().optional(),
+  username:   z.string().min(3).max(20).regex(/^[a-zA-Z0-9_]+$/, 'Alphanumeric and underscore only').optional(),
   bio:        z.string().max(500).trim().optional(),
   avatar_url: z.string().url().optional(),
   lang_pref:  z.enum(['en', 'am']).optional(),
@@ -10,6 +11,9 @@ export const updateMeSchema = z.object({
   // Email: only allowed for non-learners — enforced in service, not here
   email:      z.string().email().optional(),
   phone:      z.string().min(7).max(20).optional(),
+  // Learner demographics (optional)
+  age_range:  z.enum(['under_18', '18_24', '25_34', '35_44', '45_plus']).optional(),
+  gender:     z.enum(['male', 'female']).optional(),
 });
 
 export const updateSettingsSchema = z.object({

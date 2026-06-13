@@ -56,12 +56,15 @@ export async function updateMe(
   userId: string,
   data: {
     full_name?:  string;
+    username?:   string;
     bio?:        string;
     avatar_url?: string;
     lang_pref?:  string;
     expertise?:  string[];
     email?:      string;
     phone?:      string;
+    age_range?:  string;
+    gender?:     string;
   },
 ) {
   const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
@@ -72,6 +75,10 @@ export async function updateMe(
   }
 
   // Uniqueness checks
+  if (data.username && data.username !== user.username) {
+    const taken = await prisma.user.findUnique({ where: { username: data.username } });
+    if (taken) throw new ApiError(409, 'Username already taken');
+  }
   if (data.email && data.email !== user.email) {
     const taken = await prisma.user.findUnique({ where: { email: data.email } });
     if (taken) throw new ApiError(409, 'Email already in use');
@@ -83,10 +90,13 @@ export async function updateMe(
 
   const patch: Record<string, any> = {};
   if (data.full_name  !== undefined) patch.full_name  = data.full_name;
+  if (data.username   !== undefined) patch.username   = data.username;
   if (data.bio        !== undefined) patch.bio        = data.bio;
   if (data.avatar_url !== undefined) patch.avatar_url = data.avatar_url;
   if (data.lang_pref  !== undefined) patch.lang_pref  = data.lang_pref;
   if (data.expertise  !== undefined) patch.expertise  = data.expertise;
+  if (data.age_range  !== undefined) patch.age_range  = data.age_range;
+  if (data.gender     !== undefined) patch.gender     = data.gender;
   if (data.email !== undefined && data.email !== user.email) {
     patch.email            = data.email;
     patch.is_email_verified = false; // requires re-verification
